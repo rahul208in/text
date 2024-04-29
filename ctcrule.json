@@ -1,0 +1,39 @@
+{
+  "libraries": [
+    {
+      "name": "@types/mocha",
+      "version": "^10.0.6",
+      "status": "restricted"
+    },
+    {
+      "name": "@types/node",
+      "version": "18.x",
+      "status": "prohibuted"
+    },
+    {
+      "name": "@types/vscode",
+      "version": "^1.88.0",
+      "status": "rejected"
+    },
+    {
+      "name": "@vscode/test-cli",
+      "version": "^0.0.8",
+      "status": "allowed"
+    },
+    {
+      "name": "@vscode/test-electron",
+      "version": "^2.3.9",
+      "status": "allowed"
+    },
+    {
+      "name": "eslint",
+      "version": "^8.57.0",
+      "status": "allowed"
+    },
+    {
+      "name": "typescript",
+      "version": "^5.4.5",
+      "status": "allowed"
+    }
+  ]
+}
