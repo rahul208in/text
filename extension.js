@@ -2,218 +2,231 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 
-// Function to generate a formatted timestamp
-function getFormattedTimestamp() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hour = String(now.getHours()).padStart(2, '0');
-    const minute = String(now.getMinutes()).padStart(2, '0');
-    const second = String(now.getSeconds()).padStart(2, '0');
-    return `${year}${month}${day}_${hour}${minute}${second}`;
-}
+function activate(context) {
+    console.log('"sss" is now active!');
 
+    let disposable = vscode.commands.registerCommand('sss.generateReports', () => {
+        const devmanRulePath = path.join(vscode.workspace.rootPath, '.vscode', 'devman.json');
+        const devmanRuleContent = fs.readFileSync(devmanRulePath, 'utf-8');
+        const devmanRuleJson = JSON.parse(devmanRuleContent);
 
-// Function to determine the project type based on the presence of specific files in the project base directory
-function getProjectType() {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-        console.warn('No workspace folders found.');
-        return 'Unknown'; // Unable to determine project type if no workspace folders are found
-    }
+        const ctcRulePath = path.join(vscode.workspace.rootPath, '.vscode', 'ctcrule.json');
+        const ctcRuleContent = fs.readFileSync(ctcRulePath, 'utf-8');
+        const ctcRuleJson = JSON.parse(ctcRuleContent);
 
-    const projectRoot = workspaceFolders[0].uri.fsPath; // Get the root path of the first workspace folder
+        const packageJsonPath = path.join(vscode.workspace.rootPath, 'package.json');
+        const packageJsonContent = fs.readFileSync(packageJsonPath, 'utf-8');
+        const packageJson = JSON.parse(packageJsonContent);
 
-    // Check if package-lock.json exists in the sss folder
-    const packageJsonPath = path.join(projectRoot, 'sss', 'package-lock.json');
-    if (fs.existsSync(packageJsonPath)) {
-        return 'JavaScript'; // If package-lock.json exists in the sss folder, it's a JavaScript project
-    }
+        const ruleFilePath = path.join(vscode.workspace.rootPath, '.vscode', 'docker.json');
 
-    return 'Unknown'; // Unable to determine project type if neither file is found
-}
+        const filesToScan = getFilesToScan(vscode.workspace.rootPath);
 
+        let devmanViolations = [];
+        let ctcViolations = [];
+        let dockerViolations = [];
 
+        filesToScan.forEach(file => {
+            const content = fs.readFileSync(file, 'utf-8');
 
-// Function to create a directory if it doesn't exist
-function ensureDirectoryExists(directory) {
-    if (!fs.existsSync(directory)) {
-        fs.mkdirSync(directory, { recursive: true });
-    }
-}
+            // Check for DevMan violations
+            devmanViolations = devmanViolations.concat(checkDevManViolations(content, devmanRuleJson, file));
 
-// Function to inspect open-source dependencies
-function inspectDependencies() {
-    const ruleFilePath = path.join(__dirname, '.vscode', 'ctcrule.json');
-    try {
-        const rules = JSON.parse(fs.readFileSync(ruleFilePath, 'utf8'));
-        const projectType = getProjectType(); // Determine project type
-
-        // Read project file based on project type
-        let projectFilePath;
-        if (projectType === 'JavaScript') {
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders || workspaceFolders.length === 0) {
-                console.warn('No workspace folders found.');
-                return; // Unable to determine project type if no workspace folders are found
+            // Check for CTC violations
+            if (path.basename(file) === 'package.json') {
+                ctcViolations = ctcViolations.concat(checkCTCViolations(content, ctcRuleJson));
             }
-            const projectRoot = workspaceFolders[0].uri.fsPath; // Get the root path of the first workspace folder
-            projectFilePath = path.join(projectRoot, 'sss', 'package-lock.json');
-        } else if (projectType === 'SpringBootJava') {
-            projectFilePath = 'pom.xml';
-        } else {
-            console.error("Unsupported project type.");
-            return;
-        }
 
-        const projectDependencies = readProjectDependencies(projectFilePath);
-
-        // Compare project dependencies with rules
-        const report = {
-            timestamp: getFormattedTimestamp(),
-            findings: []
-        };
-
-        rules.libraries.forEach(library => {
-            const projectLibrary = projectDependencies.find(dep => dep.name === library.name);
-            if (projectLibrary) {
-                // Check if the version matches the rule
-                if (projectLibrary.version === library.version) {
-                    if (library.status === 'rejected' || library.status === 'prohibited') {
-                        report.findings.push({ library: library.name, issue: `Version ${library.version} is ${library.status}` });
-                    }
-                } else {
-                    if (library.status === 'rejected') {
-                        report.findings.push({ library: library.name, issue: `Version ${projectLibrary.version} of ${library.name} is used instead of rejected version ${library.version}` });
-                    }
-                }
-            } else {
-                if (library.status === 'rejected') {
-                    report.findings.push({ library: library.name, issue: `Rejected library ${library.name} is not found in project dependencies` });
-                }
+            // Check for Dockerfile violations
+            if (path.basename(file).toLowerCase() === 'dockerfile') {
+                dockerViolations = dockerViolations.concat(checkDockerfileViolations(content, ruleFilePath, file));
             }
         });
 
-        // Write report to file
-        ensureDirectoryExists(path.join(__dirname, '.vscode', 'result')); // Ensure .vscode/result folder exists
-        fs.writeFileSync(path.join(__dirname, '.vscode', 'result', 'ctcscan_report.json'), JSON.stringify(report, null, 2));
-    } catch (error) {
-        console.error(`Error reading or processing ${ruleFilePath}:`, error);
-    }
-}
+        const resultFolderPath = path.join(vscode.workspace.rootPath, '.vscode', 'result');
+        const datetimeSuffix = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').split('.')[0];
+        const resultFolderName = `result-${datetimeSuffix}`;
 
-// Function to verify presence of readme file
-function verifyReadme() {
-    const readmeExists = fs.existsSync('README.md');
-    const report = {
-        missingFile: "README.md",
-        timestamp: getFormattedTimestamp()
-    };
-	ensureDirectoryExists('.vscode/result'); // Ensure .vscode/result folder exists
-    if (!readmeExists) {
-        fs.writeFileSync('.vscode/result/archt.json', JSON.stringify(report, null, 2));
-    }
-}
-
-// Function to scan project files for sensitive information
-function scanForSensitiveInfo() {
-    const ruleFilePath = path.join(__dirname, '.vscode', 'devman.json');
-	
-    try {
-        const rules = JSON.parse(fs.readFileSync(ruleFilePath, 'utf8'));
-
-        // Code to scan project files for sensitive information based on rules and generate report
-        // Sample implementation: check for sensitive keywords in project files
-        const sensitiveKeywords = rules.sensitiveKeywords;
-        const report = {
-            timestamp: getFormattedTimestamp(),
-            findings: []
-        };
-
-        // Determine project type to exclude specific folders
-        const projectType = getProjectType();
-
-        // Function to check if a folder should be excluded based on project type
-        function shouldExcludeFolder(folderName) {
-            if (projectType === 'JavaScript') {
-                return folderName === 'node_modules';
-            } else if (projectType === 'SpringBootJava') {
-                return folderName === 'target';
-            }
-            return false; // Exclude nothing by default
+        if (!fs.existsSync(resultFolderPath)) {
+            fs.mkdirSync(resultFolderPath);
         }
 
-        // Recursive function to scan folders and files
-        function scanFolder(folderPath) {
-            const files = fs.readdirSync(folderPath);
-            files.forEach(file => {
-                const filePath = path.join(folderPath, file);
-                const stats = fs.statSync(filePath);
-                if (stats.isDirectory()) {
-                    if (!shouldExcludeFolder(file)) {
-                        scanFolder(filePath);
-                    }
-                } else {
-                    // Exclude folders and files that should be ignored
-                    if (!shouldExcludeFolder(folderPath)) {
-                        const content = fs.readFileSync(filePath, 'utf8');
-                        sensitiveKeywords.forEach(keyword => {
-                            if (content.includes(keyword)) {
-                                report.findings.push({ file: filePath, keyword: keyword });
-                            }
-                        });
-                    }
-                }
-            });
+        const resultFolderFullPath = path.join(resultFolderPath, resultFolderName);
+        if (!fs.existsSync(resultFolderFullPath)) {
+            fs.mkdirSync(resultFolderFullPath);
         }
 
-        // Start scanning from the project root
-        scanFolder('.');
+        // Generate reports
+        const devmanReportFilePath = path.join(resultFolderFullPath, 'devman_report.json');
+        const ctcReportFilePath = path.join(resultFolderFullPath, 'ctcscan_report.json');
+        const dockerReportFilePath = path.join(resultFolderFullPath, 'docker_scan_report.json');
 
-		        // Ensure .vscode/result folder exists
-				ensureDirectoryExists('.vscode/result');
+        generateReport(devmanViolations, devmanReportFilePath);
+        generateReport(ctcViolations, ctcReportFilePath);
+        generateReport(dockerViolations, dockerReportFilePath);
 
-        // Write report to file
-        fs.writeFileSync('.vscode/result/devman_report.json', JSON.stringify(report, null, 2));
-    } catch (error) {
-        console.error(`Error reading or processing ${ruleFilePath}:`, error);
-    }
-}
+        // Generate HTML report
+        const htmlReportFilePath = path.join(resultFolderFullPath, 'report.html');
+        generateHtmlReport(devmanViolations, ctcViolations, dockerViolations, packageJson, datetimeSuffix, htmlReportFilePath);
 
-// Function to read project dependencies from the specified file
-function readProjectDependencies(filePath) {
-    // Logic to read project dependencies from file
-    // For simplicity, let's assume it returns an array of dependencies with name and version
-    // Sample implementation for package.json
-    if (filePath === 'package.json') {
-        const packageJson = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        const dependencies = Object.entries(packageJson.dependencies || {}).map(([name, version]) => ({ name, version }));
-        const devDependencies = Object.entries(packageJson.devDependencies || {}).map(([name, version]) => ({ name, version }));
-        return [...dependencies, ...devDependencies];
-    } else if (filePath === 'pom.xml') {
-        // Sample implementation for pom.xml
-    } else if (filePath === 'package-lock.json') {
-		const packageLockJson = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        const dependencies = Object.entries(packageLockJson.packages || {}).map(([name, info]) => ({ name, version: info.version }));
-        const devDependencies = Object.entries(packageLockJson.packages || {}).map(([name, info]) => {
-            if (info.dev) {
-                return { name, version: info.version };
-            }
-        }).filter(dep => dep !== undefined);
-        return [...dependencies, ...devDependencies];
-    }
-}
-
-// Register the command to generate reports
-exports.activate = function(context) {
-    let disposable = vscode.commands.registerCommand('sss.generateReports', () => {
-		vscode.window.showInformationMessage('Generating reports...');
-        inspectDependencies();
-        verifyReadme();
-        scanForSensitiveInfo();
+        vscode.window.showInformationMessage('Scan reports generated successfully!');
     });
-    context.subscriptions.push(disposable);
-};
 
-exports.deactivate = function() {};
+    context.subscriptions.push(disposable);
+}
+
+function getFilesToScan(rootPath) {
+    const excludeFolders = ['.vscode', 'node_modules', 'target'];
+    const files = [];
+
+    function traverseDirectory(dir) {
+        fs.readdirSync(dir).forEach(file => {
+            const filePath = path.join(dir, file);
+            const stats = fs.statSync(filePath);
+            if (stats.isDirectory()) {
+                if (!excludeFolders.includes(file)) {
+                    traverseDirectory(filePath);
+                }
+            } else {
+                files.push(filePath);
+            }
+        });
+    }
+
+    traverseDirectory(rootPath);
+    return files;
+}
+
+function checkDevManViolations(content, devmanRuleJson, filePath) {
+    const lines = content.split('\n');
+    let violations = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        for (const keyword of devmanRuleJson.sensitiveKeywords) {
+            const regex = new RegExp(keyword, 'g');
+            if (regex.test(lines[i])) {
+                violations.push({ file: filePath, lineNumber: i + 1, ruleMatched: keyword });
+            }
+        }
+    }
+
+    return violations;
+}
+
+function checkCTCViolations(content, ctcRuleJson) {
+    const packageJson = JSON.parse(content);
+    let violations = [];
+
+    for (const [dependency, version] of Object.entries(packageJson.devDependencies)) {
+        const rule = ctcRuleJson.libraries.find(r => r.name === dependency && checkVersion(version, r.version));
+        if (rule && rule.status !== 'allowed') {
+            violations.push({ dependency, version, status: rule.status });
+        }
+    }
+
+    return violations;
+}
+
+function checkVersion(version, ruleVersion) {
+    // Add logic to check if version meets the ruleVersion
+    // For simplicity, let's assume version check is successful
+    return true;
+}
+
+function checkDockerfileViolations(content, ruleFilePath, filePath) {
+    const dockerfileViolations = [];
+    const lines = content.split('\n');
+    const dockerRules = JSON.parse(fs.readFileSync(ruleFilePath, 'utf-8')).rules;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('FROM')) {
+            if (line.includes('latest')) {
+                dockerfileViolations.push({ violation: dockerRules.FROMImageVersion.description, file: filePath, lineNumber: i + 1 });
+            }
+        } else if (line.startsWith('USER')) {
+            if (line.includes('root')) {
+                dockerfileViolations.push({ violation: dockerRules.ContainerUser.description, file: filePath, lineNumber: i + 1 });
+            }
+        }
+    }
+
+    return dockerfileViolations;
+}
+
+function generateReport(violations, reportFilePath) {
+    fs.writeFileSync(reportFilePath, JSON.stringify(violations, null, 4));
+}
+
+function generateHtmlReport(devmanViolations, ctcViolations, dockerViolations, packageJson, datetimeSuffix, htmlReportFilePath) {
+    const devmanHtml = generateViolationTable(devmanViolations, 'DevMan Violations');
+    const ctcHtml = generateViolationTable(ctcViolations, 'CTC Violations');
+    const dockerHtml = generateViolationTable(dockerViolations, 'Dockerfile Violations');
+
+    const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Scan Report</title>
+            <style>
+                table {
+                    border-collapse: collapse;
+                    width: 100%;
+                }
+                th, td {
+                    border: 1px solid #dddddd;
+                    text-align: left;
+                    padding: 8px;
+                }
+                th {
+                    background-color: #f2f2f2;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>Scan Report</h1>
+            <p>Application Name: ${packageJson.name}</p>
+            <p>Application Version: ${packageJson.version}</p>
+            <p>Scan Date: ${datetimeSuffix}</p>
+            ${devmanHtml}
+            ${ctcHtml}
+            ${dockerHtml}
+        </body>
+        </html>
+    `;
+    fs.writeFileSync(htmlReportFilePath, htmlContent);
+}
+
+function generateViolationTable(violations, title) {
+    if (violations.length === 0) {
+        return '';
+    }
+
+    let html = `
+        <h2>${title}:</h2>
+        <table>
+            <tr>
+                <th>File</th>
+                <th>Line Number</th>
+                <th>Rule Matched / Violation</th>
+            </tr>
+    `;
+    violations.forEach(violation => {
+        html += `
+            <tr>
+                <td>${violation.file}</td>
+                <td>${violation.lineNumber}</td>
+                <td>${violation.ruleMatched || violation.violation}</td>
+            </tr>
+        `;
+    });
+    html += `</table>`;
+    return html;
+}
+
+function deactivate() {}
+
+module.exports = {
+    activate,
+    deactivate
+};
