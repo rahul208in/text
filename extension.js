@@ -34,9 +34,9 @@ function activate(context) {
 
             // Check for CTC violations
             if (path.basename(file) === 'package.json') {
-                ctcViolations = ctcViolations.concat(checkCTCViolations(content, ctcRuleJson));
+                ctcViolations = ctcViolations.concat(checkCTCViolations(content, ctcRuleJson, file));
             }
-
+            
             // Check for Dockerfile violations
             if (path.basename(file).toLowerCase() === 'dockerfile') {
                 dockerViolations = dockerViolations.concat(checkDockerfileViolations(content, ruleFilePath, file));
@@ -113,19 +113,24 @@ function checkDevManViolations(content, devmanRuleJson, filePath) {
     return violations;
 }
 
-function checkCTCViolations(content, ctcRuleJson) {
+function checkCTCViolations(content, ctcRuleJson, packageJsonPath) {
     const packageJson = JSON.parse(content);
     let violations = [];
 
+    const lines = content.split('\n');
+    
     for (const [dependency, version] of Object.entries(packageJson.devDependencies)) {
         const rule = ctcRuleJson.libraries.find(r => r.name === dependency && checkVersion(version, r.version));
         if (rule && rule.status !== 'allowed') {
-            violations.push({ dependency, version, status: rule.status });
+            const dependencyLine = lines.findIndex(line => line.includes(`"${dependency}"`));
+            violations.push({ dependency, version, status: rule.status, file: packageJsonPath, lineNumber: dependencyLine !== -1 ? dependencyLine + 1 : null });
         }
     }
 
     return violations;
 }
+
+
 
 function checkVersion(version, ruleVersion) {
     // Add logic to check if version meets the ruleVersion
@@ -208,21 +213,25 @@ function generateViolationTable(violations, title) {
             <tr>
                 <th>File</th>
                 <th>Line Number</th>
-                <th>Rule Matched / Violation</th>
+                <th>Violation</th>
+                <th>Status</th>
             </tr>
     `;
     violations.forEach(violation => {
+        const lineNumber = violation.lineNumber !== -1 ? violation.lineNumber : '-';
         html += `
             <tr>
-                <td>${violation.file}</td>
-                <td>${violation.lineNumber}</td>
-                <td>${violation.ruleMatched || violation.violation}</td>
+                <td>${violation.file || ''}</td>
+                <td>${lineNumber}</td>
+                <td>${violation.ruleMatched || violation.dependency || violation.violation}</td>
+                <td>${violation.status || ''}</td>
             </tr>
         `;
     });
     html += `</table>`;
     return html;
 }
+
 
 function deactivate() {}
 
