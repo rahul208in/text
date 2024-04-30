@@ -1,0 +1,11 @@
+{
+    "rules": {
+      "FROMImageVersion": {
+        "description": "Avoid using 'latest' tag for base image in FROM instruction"
+      },
+      "ContainerUser": {
+        "description": "Avoid running containers as root. Use a non-root user instead."
+      }
+      
+    }
+  }
