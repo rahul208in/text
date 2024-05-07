@@ -1,0 +1,4 @@
+{
+    "name": "archt.json",
+    "description": "Rule file to verify the presence of a readme file in the project."
+  }
