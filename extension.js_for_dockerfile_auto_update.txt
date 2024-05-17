@@ -1,0 +1,159 @@
+const vscode = require('vscode');
+const fs = require('fs');
+const path = require('path');
+
+let diagnosticCollection;
+let decorationType;
+let lastReportContent = '';
+
+// Function to read docker.json file
+function readDockerJson() {
+    const vscodePath = vscode.workspace.rootPath;
+    const dockerJsonPath = path.join(vscodePath, '.vscode', 'docker.json');
+
+    try {
+        const dockerJson = fs.readFileSync(dockerJsonPath, 'utf8');
+        return JSON.parse(dockerJson);
+    } catch (error) {
+        vscode.window.showErrorMessage('Error reading docker.json file: ' + error.message);
+        return null;
+    }
+}
+
+// Function to read package.json file
+function readPackageJson() {
+    const vscodePath = vscode.workspace.rootPath;
+    const packageJsonPath = path.join(vscodePath, 'package.json');
+
+    try {
+        const packageJson = fs.readFileSync(packageJsonPath, 'utf8');
+        return JSON.parse(packageJson);
+    } catch (error) {
+        vscode.window.showErrorMessage('Error reading package.json file: ' + error.message);
+        return null;
+    }
+}
+
+// Function to check for violations in Dockerfile
+function checkDockerfileForViolations(dockerJson) {
+    const dockerfilePath = path.join(vscode.workspace.rootPath, 'Dockerfile');
+    const dockerfileContents = fs.readFileSync(dockerfilePath, 'utf8');
+
+    // Read rules from docker.json
+    const rules = dockerJson && dockerJson.rules ? dockerJson.rules : {};
+
+    // Implement logic to check for violations based on rules in docker.json
+    const violations = [];
+
+    // Check for violation: Avoid using 'latest' tag for base image in FROM instruction
+    if (rules.FROMImageVersion) {
+        const latestTagRegex = /FROM\s+.*:\s*latest/g;
+        let match;
+        while ((match = latestTagRegex.exec(dockerfileContents)) !== null) {
+            const line = dockerfileContents.substring(0, match.index).split('\n').length;
+            const range = new vscode.Range(new vscode.Position(line - 1, match.index), new vscode.Position(line - 1, match.index + 'latest'.length));
+            violations.push({ range: range, violationType: 'FROMImageVersion' });
+        }
+    }
+
+    // Check for violation: Avoid running containers as root. Use a non-root user instead.
+    if (rules.ContainerUser) {
+        const rootUserRegex = /USER\s+root/g;
+        let match;
+        while ((match = rootUserRegex.exec(dockerfileContents)) !== null) {
+            const line = dockerfileContents.substring(0, match.index).split('\n').length;
+            const range = new vscode.Range(new vscode.Position(line - 1, match.index), new vscode.Position(line - 1, match.index + 'root'.length));
+            violations.push({ range: range, violationType: 'ContainerUser' });
+        }
+    }
+
+    return violations;
+}
+
+// Function to create diagnostic items with code description
+function createDiagnosticItems(violations, dockerJson) {
+    const diagnosticItems = [];
+    const rules = dockerJson && dockerJson.rules ? dockerJson.rules : {};
+
+    violations.forEach(violation => {
+        const description = rules[violation.violationType] ? rules[violation.violationType].description : 'No description available';
+        const diagnostic = new vscode.Diagnostic(violation.range, description, vscode.DiagnosticSeverity.Warning);
+        diagnostic.code = violation.violationType; // Assign violation type as code
+        diagnosticItems.push(diagnostic);
+    });
+
+    return diagnosticItems;
+}
+
+// Function to update decorations in the editor
+function updateDecorations() {
+    if (!diagnosticCollection) {
+        diagnosticCollection = vscode.languages.createDiagnosticCollection('dockerfile-violations');
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+        return;
+    }
+
+    const violations = checkDockerfileForViolations(readDockerJson());
+    const dockerJson = readDockerJson();
+    const diagnosticItems = createDiagnosticItems(violations, dockerJson);
+    diagnosticCollection.set(editor.document.uri, diagnosticItems);
+
+    if (!decorationType) {
+        decorationType = vscode.window.createTextEditorDecorationType({
+            textDecoration: 'underline yellow wavy',
+        });
+    }
+
+    editor.setDecorations(decorationType, violations.map(violation => violation.range));
+
+    // Generate report file if violations are different from the last scan
+    const currentReportContent = JSON.stringify(violations.map(violation => violation.range.start.line + 1));
+    if (currentReportContent !== lastReportContent) {
+        generateReportFile(violations);
+        lastReportContent = currentReportContent;
+    }
+}
+
+// Function to generate report file
+function generateReportFile(violations) {
+    const vscodeResultPath = path.join(vscode.workspace.rootPath, '.vscode', 'result');
+    if (!fs.existsSync(vscodeResultPath)) {
+        fs.mkdirSync(vscodeResultPath);
+    }
+
+    const currentDate = new Date().toLocaleString().replace(/[\/\,\:]/g, '-');
+    const reportFileName = `report_${currentDate}.json`;
+    const reportFilePath = path.join(vscodeResultPath, reportFileName);
+
+    const reportContent = JSON.stringify(violations.map(violation => {
+        return {
+            line: violation.range.start.line + 1,
+            fileName: vscode.window.activeTextEditor.document.fileName,
+            violationType: violation.violationType
+        };
+    }), null, 4);
+
+    fs.writeFileSync(reportFilePath, reportContent);
+}
+
+// Command to run the extension
+const disposable = vscode.commands.registerCommand('extension.checkDockerfile', () => {
+    const dockerJson = readDockerJson();
+    const packageJson = readPackageJson();
+    if (dockerJson && packageJson) {
+        vscode.window.showInformationMessage('Checking Dockerfile for violations...');
+        updateDecorations();
+    }
+});
+
+// Subscribe to editor events for dynamic updates
+const subscriptions = vscode.Disposable.from(vscode.window.onDidChangeActiveTextEditor(updateDecorations), vscode.workspace.onDidChangeTextDocument(updateDecorations));
+
+module.exports = {
+    activate: function (context) {
+        context.subscriptions.push(disposable, subscriptions);
+    }
+};
