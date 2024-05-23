@@ -82,8 +82,10 @@ function readPackageJson() {
 async function validateDockerfile(dockerfilePath) {
     try {
         const dockerfileContents = fs.readFileSync(dockerfilePath, 'utf8');
-        const response = await axios.post('http://localhost:3000/validateDockerfile', { data: dockerfileContents }, {
-            headers: { 'Content-Type': 'application/json' }
+        const response = await axios.post('http://localhost:3000/validateDockerfile', dockerfileContents, {
+            headers: { 
+                'Content-Type': 'text/plain'
+            }
         });
 
         const violations = response.data.violations || [];
@@ -103,7 +105,11 @@ async function validateDockerfile(dockerfilePath) {
             description: packageJson.description,
             version: packageJson.version,
             author: packageJson.author,
-            violations
+            violations: violations.map(violation => ({
+                'Error Line': violation.lineContent,
+                'Error Line number': violation.line,
+                description: ruleDescriptions[violation.rule] || 'No description available'
+            }))
         }, null, 4);
 
         // Compare the new report content with the last report content
