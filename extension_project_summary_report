@@ -88,7 +88,7 @@ async function validateDockerfile(dockerfilePath) {
             }
         });
 
-        const violations = response.data.violations || [];
+        const violations = response.data || [];
         const vscodeResultPath = path.join(vscode.workspace.rootPath, '.vscode', 'result');
         if (!fs.existsSync(vscodeResultPath)) {
             fs.mkdirSync(vscodeResultPath);
@@ -106,9 +106,9 @@ async function validateDockerfile(dockerfilePath) {
             version: packageJson.version,
             author: packageJson.author,
             violations: violations.map(violation => ({
-                'Error Line': violation.lineContent,
-                'Error Line number': violation.line,
-                description: ruleDescriptions[violation.rule] || 'No description available'
+                'Error Line': violation['Error Line'],
+                'Error Line number': violation['Error Line number'],
+                description: violation.description
             }))
         }, null, 4);
 
@@ -130,10 +130,10 @@ function createDiagnosticItems(violations) {
     const diagnosticItems = [];
 
     violations.forEach(violation => {
-        const description = ruleDescriptions[violation.rule] ? ruleDescriptions[violation.rule] : `No description available (${violation.rule})`;
-        const range = new vscode.Range(new vscode.Position(violation.line - 1, 0), new vscode.Position(violation.line - 1, 100)); // Adjusted range end for better highlighting
+        const description = ruleDescriptions[violation['Error Line']] || 'No description available';
+        const range = new vscode.Range(new vscode.Position(violation['Error Line number'] - 1, 0), new vscode.Position(violation['Error Line number'] - 1, 100)); // Adjusted range end for better highlighting
         const diagnostic = new vscode.Diagnostic(range, description, vscode.DiagnosticSeverity.Warning);
-        diagnostic.code = violation.rule; // Assign violation type as code
+        diagnostic.code = violation['Error Line']; // Assign violation line as code
         diagnosticItems.push(diagnostic);
     });
 
