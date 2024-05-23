@@ -82,8 +82,8 @@ function readPackageJson() {
 async function validateDockerfile(dockerfilePath) {
     try {
         const dockerfileContents = fs.readFileSync(dockerfilePath, 'utf8');
-        const response = await axios.post('http://localhost:3000/validateDockerfile', dockerfileContents, {
-            headers: { 'Content-Type': 'text/plain' }
+        const response = await axios.post('http://localhost:3000/validateDockerfile', `data=${encodeURIComponent(dockerfileContents)}`, {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
         const violations = response.data.violations || [];
