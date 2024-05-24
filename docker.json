@@ -1,11 +1,22 @@
 {
-    "rules": {
-      "FROMImageVersion": {
-        "description": "Avoid using 'latest' tag for base image in FROM instruction"
+  "rules": [
+    {
+      "condition": {
+        "startswith": "FROM",
+        "contains": "",
+        "endswith": "LATEST"
       },
-      "ContainerUser": {
-        "description": "Avoid running containers as root. Use a non-root user instead."
-      }
-      
+      "description": "Avoid using 'latest' tag for base image in FROM instruction",
+      "id": "FromImageVersion"
+    },
+    {
+      "condition": {
+        "startswith": "USER",
+        "contains": "",
+        "endswith": "root"
+      },
+      "description": "Avoid running containers as root. Use a non-root user instead",
+      "id": "ContainerUser"
     }
-  }
+  ]
+}
