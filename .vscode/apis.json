@@ -1,0 +1,23 @@
+{
+    "endpoints": [
+      {
+        "name": "Get User Info",
+        "url": "https://jsonplaceholder.typicode.com/posts",
+        "method": "GET",
+        "cred": false
+      },
+      {
+        "name": "Get RRR Info",
+        "url": "https://jsonplaceholder.typicode.com/posts",
+        "method": "GET",
+        "cred": false
+      },
+      {
+        "name": "Get Orders",
+        "url": "https://jsonplaceholder.typicode.com/posts/1/comments",
+        "method": "GET",
+        "cred": false
+      }
+    ]
+  }
+  
