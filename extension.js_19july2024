@@ -8,7 +8,16 @@ async function activate(context) {
     const reportView = vscode.window.createTreeView('reportExplorer', { treeDataProvider: reportProvider });
 
     const refreshCommand = vscode.commands.registerCommand('extension.refreshReports', async () => {
-        await generateReport(reportProvider);
+        const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+        statusBar.text = 'Generating report...';
+        statusBar.show();
+        try {
+            await generateReport(reportProvider);
+            vscode.window.showInformationMessage('Report generation completed successfully.');
+        } catch (error) {
+            vscode.window.showErrorMessage(`Report generation failed: ${error.message}`);
+        }
+        statusBar.hide();
     });
 
     context.subscriptions.push(refreshCommand, reportView);
@@ -16,24 +25,21 @@ async function activate(context) {
     async function generateReport(reportProvider) {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
-            vscode.window.showErrorMessage('No workspace folder open');
-            return;
+            throw new Error('No workspace folder open');
         }
 
         const workspacePath = workspaceFolders[0].uri.fsPath;
         const packageJsonPath = path.join(workspacePath, 'package.json');
         
         if (!fs.existsSync(packageJsonPath)) {
-            vscode.window.showErrorMessage('package.json not found in the workspace');
-            return;
+            throw new Error('package.json not found in the workspace');
         }
 
         const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
         const dependencies = packageJson.dependencies;
 
         if (!dependencies) {
-            vscode.window.showErrorMessage('No dependencies found in package.json');
-            return;
+            throw new Error('No dependencies found in package.json');
         }
 
         const vscodeFolderPath = path.join(workspacePath, '.vscode');
@@ -41,14 +47,15 @@ async function activate(context) {
             fs.mkdirSync(vscodeFolderPath);
         }
 
-        const response = await axios.post('http://1.2.3.4:/postpackage', { dependencies }).catch(error => {
-            vscode.window.showErrorMessage(`Failed to post package: ${error.message}`);
-            return;
-        });
+        let response;
+        try {
+            response = await axios.post('http://1.2.3.4:/postpackage', { dependencies });
+        } catch (error) {
+            throw new Error(`Failed to post package: ${error.message}`);
+        }
 
         if (!response || !response.data) {
-            vscode.window.showErrorMessage('Invalid response from API');
-            return;
+            throw new Error('Invalid response from API');
         }
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -56,14 +63,15 @@ async function activate(context) {
         const jsonFilePath = path.join(vscodeFolderPath, jsonFileName);
         fs.writeFileSync(jsonFilePath, JSON.stringify(response.data));
 
-        const htmlResponse = await axios.post('http://another-api-endpoint', response.data).catch(error => {
-            vscode.window.showErrorMessage(`Failed to get HTML report: ${error.message}`);
-            return;
-        });
+        let htmlResponse;
+        try {
+            htmlResponse = await axios.post('http://another-api-endpoint', response.data);
+        } catch (error) {
+            throw new Error(`Failed to get HTML report: ${error.message}`);
+        }
 
         if (!htmlResponse || !htmlResponse.data) {
-            vscode.window.showErrorMessage('Invalid HTML response from API');
-            return;
+            throw new Error('Invalid HTML response from API');
         }
 
         const reportFolderPath = path.join(vscodeFolderPath, 'report');
@@ -76,6 +84,19 @@ async function activate(context) {
         fs.writeFileSync(htmlFilePath, htmlResponse.data);
 
         reportProvider.refresh();
+    }
+
+    vscode.commands.registerCommand('extension.openReport', openReport);
+
+    function openReport(resourceUri) {
+        const panel = vscode.window.createWebviewPanel(
+            'htmlReport',
+            resourceUri.path.split('/').pop(),
+            vscode.ViewColumn.One,
+            {}
+        );
+
+        panel.webview.html = fs.readFileSync(resourceUri.fsPath, 'utf8');
     }
 }
 
@@ -122,17 +143,8 @@ class ReportItem extends vscode.TreeItem {
     }
 }
 
-async function openReport(resourceUri) {
-    const panel = vscode.window.createWebviewPanel(
-        'htmlReport',
-        resourceUri.path.split('/').pop(),
-        vscode.ViewColumn.One,
-        {}
-    );
-
-    panel.webview.html = fs.readFileSync(resourceUri.fsPath, 'utf8');
-}
-
-vscode.commands.registerCommand('extension.openReport', openReport);
+vscode.commands.registerCommand('extension.refreshReports', async () => {
+    await generateReport();
+});
 
 exports.activate = activate;
