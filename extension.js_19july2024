@@ -4,16 +4,16 @@ const path = require('path');
 const axios = require('axios');
 
 async function activate(context) {
-    const reportView = vscode.window.createTreeView('reportExplorer', { treeDataProvider: new ReportProvider() });
+    const reportProvider = new ReportProvider();
+    const reportView = vscode.window.createTreeView('reportExplorer', { treeDataProvider: reportProvider });
 
     const refreshCommand = vscode.commands.registerCommand('extension.refreshReports', async () => {
-        await generateReport();
-        reportView.message = "Reports refreshed";
+        await generateReport(reportProvider);
     });
 
     context.subscriptions.push(refreshCommand, reportView);
 
-    async function generateReport() {
+    async function generateReport(reportProvider) {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
             vscode.window.showErrorMessage('No workspace folder open');
@@ -75,18 +75,18 @@ async function activate(context) {
         const htmlFilePath = path.join(reportFolderPath, htmlFileName);
         fs.writeFileSync(htmlFilePath, htmlResponse.data);
 
-        vscode.commands.executeCommand('reportExplorer.refresh');
+        reportProvider.refresh();
     }
 }
 
 class ReportProvider {
     constructor() {
-        this.onDidChangeTreeData = new vscode.EventEmitter();
-        this.onDidChangeTreeData.event;
+        this._onDidChangeTreeData = new vscode.EventEmitter();
+        this.onDidChangeTreeData = this._onDidChangeTreeData.event;
     }
 
     refresh() {
-        this.onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire();
     }
 
     getTreeItem(element) {
