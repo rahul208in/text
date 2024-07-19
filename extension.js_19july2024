@@ -31,7 +31,7 @@ function activate(context) {
             statusBar.hide();
         }
     });
-
+    
     context.subscriptions.push(refreshCommand);
 
     // Register the open report command
@@ -182,15 +182,32 @@ class ReportProvider {
 
         const workspacePath = workspaceFolders[0].uri.fsPath;
         const reportFolderPath = path.join(workspacePath, '.vscode', 'report');
-        if (!fs.existsSync(reportFolderPath)) {
-            return [];
+        const items = [];
+
+        // Add a "Run Scan" button as the first item
+        const runScanButton = new vscode.TreeItem('Run Scan', vscode.TreeItemCollapsibleState.None, {
+            command: 'extension.refreshReports', // Ensure this matches the command ID in package.json
+            title: 'Run Scan'
+        });
+        runScanButton.iconPath = {
+            light: path.join(__dirname, 'resources', 'icons', 'light', 'run-scan.svg'),
+            dark: path.join(__dirname, 'resources', 'icons', 'dark', 'run-scan.svg')
+        };
+        runScanButton.tooltip = 'Click to refresh reports';
+        runScanButton.command = { command: 'extension.refreshReports', title: 'Run Scan' }; // Ensure command ID matches
+        items.push(runScanButton);
+
+        if (fs.existsSync(reportFolderPath)) {
+            const files = fs.readdirSync(reportFolderPath).filter(file => file.endsWith('.html'));
+            console.log('Found HTML files:', files);
+            items.push(...files.map(file => new ReportItem(file, reportFolderPath)));
         }
 
-        const files = fs.readdirSync(reportFolderPath).filter(file => file.endsWith('.html'));
-        console.log('Found HTML files:', files);
-        return files.map(file => new ReportItem(file, reportFolderPath));
+        return items;
     }
 }
+
+
 
 class ReportItem extends vscode.TreeItem {
     constructor(label, folderPath) {
@@ -203,5 +220,6 @@ class ReportItem extends vscode.TreeItem {
         };
     }
 }
+
 
 exports.activate = activate;
