@@ -1,133 +1,194 @@
 const vscode = require('vscode');
-const fs = require('fs');
+const fs = require('fs-extra'); // Updated to use fs-extra for consistent handling of file operations
 const path = require('path');
 const axios = require('axios');
 
-async function activate(context) {
-    const reportProvider = new ReportProvider();
-    const reportView = vscode.window.createTreeView('reportExplorer', { treeDataProvider: reportProvider });
+function activate(context) {
+    console.log('Extension "html-reports" activated.');
 
+    // Create and register the report provider
+    const reportProvider = new ReportProvider();
+    vscode.window.createTreeView('reportExplorer', { treeDataProvider: reportProvider });
+    console.log('Tree view created.');
+
+    // Register the refresh command
     const refreshCommand = vscode.commands.registerCommand('extension.refreshReports', async () => {
+        console.log('Refresh command invoked');
         const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
         statusBar.text = 'Generating report...';
         statusBar.show();
+        
         try {
+            vscode.window.showInformationMessage('Starting report generation...');
+            console.log('Starting report generation...');
             await generateReport(reportProvider);
             vscode.window.showInformationMessage('Report generation completed successfully.');
+            console.log('Report generation completed successfully.');
         } catch (error) {
             vscode.window.showErrorMessage(`Report generation failed: ${error.message}`);
+            console.error(`Report generation failed: ${error.message}`);
+        } finally {
+            statusBar.hide();
         }
-        statusBar.hide();
     });
 
-    context.subscriptions.push(refreshCommand, reportView);
+    context.subscriptions.push(refreshCommand);
 
-    async function generateReport(reportProvider) {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) {
-            throw new Error('No workspace folder open');
-        }
-
-        const workspacePath = workspaceFolders[0].uri.fsPath;
-        const packageJsonPath = path.join(workspacePath, 'package.json');
-        
-        if (!fs.existsSync(packageJsonPath)) {
-            throw new Error('package.json not found in the workspace');
-        }
-
-        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-        const dependencies = packageJson.dependencies;
-
-        if (!dependencies) {
-            throw new Error('No dependencies found in package.json');
-        }
-
-        const vscodeFolderPath = path.join(workspacePath, '.vscode');
-        if (!fs.existsSync(vscodeFolderPath)) {
-            fs.mkdirSync(vscodeFolderPath);
-        }
-
-        let response;
-        try {
-            response = await axios.post('http://1.2.3.4:/postpackage', { dependencies });
-        } catch (error) {
-            throw new Error(`Failed to post package: ${error.message}`);
-        }
-
-        if (!response || !response.data) {
-            throw new Error('Invalid response from API');
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const jsonFileName = `${packageJson.name}-${timestamp}.json`;
-        const jsonFilePath = path.join(vscodeFolderPath, jsonFileName);
-        fs.writeFileSync(jsonFilePath, JSON.stringify(response.data));
-
-        let htmlResponse;
-        try {
-            htmlResponse = await axios.post('http://another-api-endpoint', response.data);
-        } catch (error) {
-            throw new Error(`Failed to get HTML report: ${error.message}`);
-        }
-
-        if (!htmlResponse || !htmlResponse.data) {
-            throw new Error('Invalid HTML response from API');
-        }
-
-        const reportFolderPath = path.join(vscodeFolderPath, 'report');
-        if (!fs.existsSync(reportFolderPath)) {
-            fs.mkdirSync(reportFolderPath);
-        }
-
-        const htmlFileName = `${packageJson.name}-${timestamp}.html`;
-        const htmlFilePath = path.join(reportFolderPath, htmlFileName);
-        fs.writeFileSync(htmlFilePath, htmlResponse.data);
-
-        reportProvider.refresh();
-    }
-
-    vscode.commands.registerCommand('extension.openReport', openReport);
-
-    function openReport(resourceUri) {
+    // Register the open report command
+    const openReportCommand = vscode.commands.registerCommand('extension.openReport', (resourceUri) => {
+        console.log(`Open report command invoked for: ${resourceUri.fsPath}`);
+    
         const panel = vscode.window.createWebviewPanel(
             'htmlReport',
-            resourceUri.path.split('/').pop(),
+            path.basename(resourceUri.path),
             vscode.ViewColumn.One,
             {}
         );
-
+    
         panel.webview.html = fs.readFileSync(resourceUri.fsPath, 'utf8');
+        console.log(`Opened report: ${resourceUri.fsPath}`);
+    });
+
+    context.subscriptions.push(openReportCommand);
+
+    console.log('Commands registered and ready.');
+}
+
+async function generateReport(reportProvider) {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        throw new Error('No workspace folder open');
     }
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    const packageJsonPath = path.join(workspacePath, 'package.json');
+
+    if (!fs.existsSync(packageJsonPath)) {
+        throw new Error('package.json not found in the workspace');
+    }
+
+    vscode.window.showInformationMessage('Reading package.json...');
+    console.log('Reading package.json...');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    const dependencies = packageJson.dependencies;
+
+    if (!dependencies) {
+        throw new Error('No dependencies found in package.json');
+    }
+
+    const vscodeFolderPath = path.join(workspacePath, '.vscode');
+    if (!fs.existsSync(vscodeFolderPath)) {
+        vscode.window.showInformationMessage('Creating .vscode folder...');
+        console.log('Creating .vscode folder...');
+        fs.mkdirSync(vscodeFolderPath);
+    }
+
+    let response;
+    try {
+        vscode.window.showInformationMessage('Posting package to API...');
+        console.log('Posting package to API...');
+        response = await axios.post('http://1.2.3.4/postpackage', { dependencies }, {
+            headers: {
+                'accept': '*/*',
+                'filetype': 'package.json',
+                'projectType': 'npm'
+            }
+        });
+        vscode.window.showInformationMessage('Received response from API.');
+        console.log('Received response from API:', response.data);
+    } catch (error) {
+        throw new Error(`Failed to post package: ${error.message}`);
+    }
+
+    if (!response || !response.data) {
+        throw new Error('Invalid response from API');
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const jsonFileName = `${packageJson.name}-${timestamp}.json`;
+    const jsonFilePath = path.join(vscodeFolderPath, jsonFileName);
+    vscode.window.showInformationMessage(`Saving response to ${jsonFileName}...`);
+    console.log(`Saving response to ${jsonFileName}...`);
+    fs.writeFileSync(jsonFilePath, JSON.stringify(response.data, null, 2));
+
+    let htmlResponse;
+    try {
+        vscode.window.showInformationMessage('Posting JSON to another API...');
+        console.log('Posting JSON to another API...');
+        htmlResponse = await axios.post('http://another-api-endpoint', response.data, {
+            headers: {
+                'accept': '*/*',
+                'filetype': 'json',
+                'projectType': 'npm'
+            }
+        });
+        vscode.window.showInformationMessage('Received HTML response from API.');
+        console.log('Received HTML response from API:', htmlResponse.data);
+    } catch (error) {
+        throw new Error(`Failed to get HTML report: ${error.message}`);
+    }
+
+    if (!htmlResponse || !htmlResponse.data) {
+        throw new Error('Invalid HTML response from API');
+    }
+
+    const reportFolderPath = path.join(vscodeFolderPath, 'report');
+    if (!fs.existsSync(reportFolderPath)) {
+        vscode.window.showInformationMessage('Creating report folder...');
+        console.log('Creating report folder...');
+        fs.mkdirSync(reportFolderPath);
+    }
+
+    const htmlFileName = `${packageJson.name}-${timestamp}.html`;
+    const htmlFilePath = path.join(reportFolderPath, htmlFileName);
+    // vscode.window.showInformationMessage(`Saving HTML report to ${htmlFileName}...`);
+    console.log(`Saving HTML report to ${htmlFileName}...`);
+    fs.writeFileSync(htmlFilePath, htmlResponse.data);
+
+    reportProvider.refresh();
+    vscode.window.showInformationMessage('Report generation process finished.');
+    console.log('Report generation process finished.');
+
+
+    console.log('Workspace path:', workspacePath);
+console.log('Package JSON path:', packageJsonPath);
+console.log('Dependencies:', dependencies);
+console.log('Vscode folder path:', vscodeFolderPath);
+console.log('Response data:', response.data);
+console.log('HTML response data:', htmlResponse.data);
 }
 
 class ReportProvider {
     constructor() {
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        console.log('ReportProvider initialized.');
     }
 
     refresh() {
         this._onDidChangeTreeData.fire();
+        console.log('ReportProvider refreshed.');
     }
 
     getTreeItem(element) {
         return element;
     }
 
-    getChildren() {
+    async getChildren() {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
-            return Promise.resolve([]);
+            return [];
         }
 
         const workspacePath = workspaceFolders[0].uri.fsPath;
         const reportFolderPath = path.join(workspacePath, '.vscode', 'report');
         if (!fs.existsSync(reportFolderPath)) {
-            return Promise.resolve([]);
+            return [];
         }
 
         const files = fs.readdirSync(reportFolderPath).filter(file => file.endsWith('.html'));
-        return Promise.resolve(files.map(file => new ReportItem(file, reportFolderPath)));
+        console.log('Found HTML files:', files);
+        return files.map(file => new ReportItem(file, reportFolderPath));
     }
 }
 
@@ -142,9 +203,5 @@ class ReportItem extends vscode.TreeItem {
         };
     }
 }
-
-vscode.commands.registerCommand('extension.refreshReports', async () => {
-    await generateReport();
-});
 
 exports.activate = activate;
