@@ -4,72 +4,228 @@ const fs = require('fs-extra');
 const archiver = require('archiver');
 const path = require('path');
 const FormData = require('form-data');
-
-const token = 'YOUR_GENERATED_JWT_TOKEN'; // Replace with the generated JWT token
+const { time } = require('console');
+const os = rquire('./timer');
 
 function activate(context) {
-    const reportProvider = new ReportProvider('ctscan');
-    const reportProvider1 = new ReportProvider('hemscan');
+    console.log('Extension SS activated');
+    const ctscanProvider = new ReportProvider('ctscan',600); // 10 minutes
+    const hemscanProvider = new ReportProvider('hemscan',1800); // 30 minutes
 
-    vscode.window.createTreeView('reportExplorer', { treeDataProvider: reportProvider });
-    vscode.window.createTreeView('reportExplorer1', { treeDataProvider: reportProvider1 });
+    vscode.window.createTreeView('reportExplorer', { treeDataProvider: ctscanProvider });
+    vscode.window.createTreeView('reportExplorer1', { treeDataProvider: hemscanProvider });
 
-    const refreshCommand = vscode.commands.registerCommand('extension.refreshReport', async () => {
-        await runScan('ctscan', reportProvider);
+    const refreshCommandCtscan = vscode.commands.registerCommand('extension.refreshCtscanReport', async () => {
+        if (ctscanProvider.timer.remainingTime <=0) {
+            await runCtscan(ctscanProvider);
+        } else {
+            vscode.window.showWarningMessage(`Please wait for ${formatTime}(ctscanProvider.timer.remainingTime) before re-running the scan.`);
+           }
     });
 
-    const refreshCommand1 = vscode.commands.registerCommand('extension.refreshReport1', async () => {
-        await runScan('hemscan', reportProvider1);
+    const refreshCommandHemscan = vscode.commands.registerCommand('extension.refreshHemscanReport', async () => {
+        if (hemscanProvider.timer.remainingTime <=0) {
+            await runHemScan(hemscanProvider);
+        } else {
+            vscode.window.showWarningMessage(`Please wait for ${formatTime(hemscanProvider.timer.remainingTime)} before re-running the scan.`);
+        } 
     });
 
-    context.subscriptions.push(refreshCommand);
-    context.subscriptions.push(refreshCommand1);
+    context.subscriptions.push(refreshCommandCtscan, refreshCommandHemscan)
 
     const openReportCommand = vscode.commands.registerCommand('extension.openReport', (resourceUri) => {
         const panel = vscode.window.createWebviewPanel(
             'htmlReport',
             path.basename(resourceUri.path),
             vscode.ViewColumn.One,
-            {}
+            {
+                enableScripts: true,
+                localResourceRoots: [vscode.Uri.file(path.dirname(resourceUri.fsPath))] 
+            }
         );
-
-        panel.webview.html = fs.readFileSync(resourceUri.fsPath, 'utf8');
+        const htmlContent = fs.readFileSync(resourceUri.fsPath, 'utf8');
+        panel.webview.html = getWebviewContent(htmlContent);
     });
 
-    context.subscriptions.push(openReportCommand);
-
-    console.log('Commands registered and ready.');
 }
 
-async function runScan(folderName, reportProvider) {
-    const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
-    statusBar.text = `Generating Report for ${folderName}`;
-    statusBar.show();
+function getWebviewContent(htmlContent){
+    return `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Report</title>
+    </head>
+    <body>
+        ${htmlContent}
+    </body>
+    </html>`;
+}
+
+async function runCtscan(reportProvider){
+    const projectPath = vscode.workspace.rootPath;
+    const token = 'YOUR_GENERATED_JWT_TOKEN';
+    const homeDir = os.homedir();
+    const projectFolderName = path.basename(projctPath);
+    const reportDir = path.join(homeDir, '.ss', projectFolderName, 'ctscan');
+
+    fs.ensureDirSync(reportDir);
+
+vscode.window.withProgress({
+    location:vscode.ProgressLocation.Notification,
+    title: `Running CT Scan`,
+    cancellable: false
+}, async (progress)=> {
+    progress.report({ increment:0, message: "Checking project files..."});
+
+    const filesToCheck = ['package.json', 'pom.xml', 'request.txt'];
+    let filePathToSend = null;
+    for (const file of filesToCheck) {
+        const filePath = path.join(projectPath, file);
+        if (fs.existsSync(filePath)) {
+            filePathToSend = filePath;
+            break;
+        }
+
+    }
+ 
+    if (!filePathToSend) {
+        vscode.window.showErrorMessage('No Package.json, pom.xml or request.txt found');
+        return;
+    }
+
+const fileContent = fs.readFileSync(filePathToSend, 'utf8');
+const fileType = path.basename(filePathToSend);
+const apiEndpoint = 'http://1.2.3.4:8080/validate';
+
+let response;
+try {
+    vscode.window.showInformationMessage(`Posting ${fileType} to API...`);
+    console.log(`Posting ${fileType} to API...`);
+    response = await axios.post(apiEndpoint, { content: fileContent}, {
+        headers:{
+            'accept': '*/*',
+            'filetype': fileType,
+            'projectType': 'npm',
+            'Content-Type': 'application/json'
+        }
+    });
+    vscode.window.showInformationMessage('Received response from API');
+    console.log('Received response from API:', response.data);
+} catch(error) {
+    vscode.window.showErrorMessage(`Failed to post file: ${error.message}`);
+    return;
+}
+
+if (!response || !response.data){
+    vscode.windows.showErrorMessage('Invalid response from API');
+    return;
+}
+
+const timestamp = new Date().toISOString().replace(/:.]/g, '-');
+const jsonFileName = `ctscan-${timestamp}.json`;
+const jsonFilePath = path.join(reportDir, jsonFileName);
+
+try {
+    vscode.window.showInformationMessage(`Saving JSON response to ${jsonFileName}...`);
+    console.log(`Saving JSON response to ${jsonFileName}...`);
+    fs.writeFileSync(jsonFilePath, JSON.stringify(response.data, null, 2));
+}
+catch (error) {
+    vscode.window.showErrorMessage(`Failed to save JSON response: ${error.message}`);
+    return;
+}
+let htmlResponse
+try {
+    vscode.window.showInformationMessage('Posting JSON to another API...');
+    console.log('Posting JSON to another API....');
+    htmlResponse = await axios.post('http://1.2.3.4'. response.data, {
+        headers:{
+            'accept': '*/*',
+            'filetype': 'json',
+            'projectType': 'npm',
+            'Content-Type': 'application/json'
+        }
+    });
+    vscode.window.showInformationMessage('Received HTML response from API');
+    console.log('Received HTML response from API:', htmlResponse.data);
+} catch (error) {
+    vscode.window.showErrorMessage(`Failed to get HTML report: ${error.message}`);
+    return;
+}
+if (!htmlResponse || !htmlResponse.data) {
+    vscode.window.showErrorMessage('Invalid HTML response from API');
+    return;
+}
+const htmlFileName = `ctscan-${timestamp}.html`;
+const htmlFilePath = path.join(reportDir, htmlFileName);
+
+try {
+    vscode.window.showInformationMessage(`Saving HTML report to ${htmlFileName}...`);
+    console.log(`Saving HTML report to ${htmlFileName}...`);
+    fs.writeFileSync(htmlFilePath, htmlResponse.data);
+} catch (error) {
+    vscode.window.showErrorMessage(`Failed to save HTML report: ${error.message}`);
+    return;
+}
+progress.report({ increment:100, message:"Scan completed. Report Generated"});
+
+vscode.window.showInformationMessage(`Report generated: ${htmlFileName}`);
+    console.log('Report generation process finished');
+
+    reportProvider.refresh();
+    reportProvider.timer.reset();
+    reportProvider.timer.start();
+    });
+
+}
+
+async function runHemscan(reportProvider) {
+    const projctPath = vscode.workspace.rootPath;
+    const token ='mytoken';
+    const homeDir = os.homedir();
+    const projectFolderName = path.basename(projctPath);
+    const reportDir = path.join(homeDir, '.ss', projectFolderName, 'hemscan');
+
+
+    fs.ensureDirSync(reportDir);
+
+    vscode.window.withProgress({
+        location:vscode.ProgressLocation.Notification,
+        title: `Running HEM Scan`,
+        cancellable: false
+    }, async (progress)=> {
+        progress.report({ increment:0, message: "Packaging project files..."});
+
+    const zipPath = path.join(projctPath, 'hemscan-project.zip');
+    await zipProjectFiles(projectPath, zipPath);
+
+    progress.report({ increment: 50, message: "Sending project files to server..."});
 
     try {
-        vscode.window.showInformationMessage(`Starting report generation for ${folderName}...`);
-        const projectPath = vscode.workspace.rootPath;
-        const zipPath = path.join(projectPath, 'project.zip');
-        await zipProjectFiles(projectPath, zipPath);
-
-        const response = await sendProjectFiles(zipPath, token);
-        const reportPath = path.join(projectPath, '.vscode', folderName, 'scan-report.html');
-        fs.ensureDirSync(path.dirname(reportPath));
+        const response = await sendHemscanFiles(zipPath, token);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const htmlFileName = `${projectFolderName}-${timestamp}.html`;
+        const reportPath = path.join(reportDir, htmlFileName);
         fs.writeFileSync(reportPath, response.data);
 
-        vscode.window.showInformationMessage(`Scan completed. Report generated for ${folderName}.`);
-        reportProvider.refresh();
+        progress.report({ increment: 100, message: "Scan Completed. Report Generated"});
+        vscode.window.showInformationMessage(`Scan completed. Report generated: ${htmlFileName}`);
 
-        const openPath = vscode.Uri.file(reportPath);
-        vscode.workspace.openTextDocument(openPath).then(doc => {
-            vscode.window.showTextDocument(doc);
-        });
+        reportProvider.refresh();
+        reportProvider.timer.reset();
+        reportProvider.timer.start();
     } catch (error) {
-        vscode.window.showErrorMessage(`Scan failed for ${folderName}: ${error.message}`);
-    } finally {
-        statusBar.hide();
+        vscode.window.showErrorMessage(`Scan failed: ${error.message}`);
     }
+    });
 }
+
+
+
+
+
 
 async function zipProjectFiles(sourceDir, zipPath) {
     return new Promise((resolve, reject) => {
@@ -90,7 +246,7 @@ async function zipProjectFiles(sourceDir, zipPath) {
     });
 }
 
-async function sendProjectFiles(zipPath, token) {
+async function sendHemscanFiles(zipPath, token) {
     const formData = new FormData();
     formData.append('project', fs.createReadStream(zipPath));
 
@@ -104,14 +260,37 @@ async function sendProjectFiles(zipPath, token) {
 }
 
 class ReportProvider {
-    constructor(folderName) {
-        this.folderName = folderName;
+    constructor(scanType, timeDuration) {
+        this.scanType = scanType;
+        this.timeDuration = timeDuration;
+        this.timer = new Timer(timeDuration, (remainingTime)=> {
+
+            this.updateTimer(remainingTime);
+        }, () => {
+            this.timerCompleted();
+        });
+        this.timer.remainingTime = 0;
         this._onDidChangeTreeData = new vscode.EventEmitter();
         this.onDidChangeTreeData = this._onDidChangeTreeData.event;
+        this.runScanButton = null;
+        console.log(`${scanType} ReportProvider initialized`)
     }
 
     refresh() {
         this._onDidChangeTreeData.fire();
+        console.log(`${this.scanType} ReportProvider refreshed`);
+    }
+
+    updateTimer(remainingTime) {
+        if (this.runScanButton) {
+            this.runScanButton.label = `Run ${this.scanType} Scan (Next run in: ${formatTime(remainingTime)})`;
+        }
+    }
+
+    timerCompleted(){
+        if (this.runScanButton) {
+            this.runScanButton.label = `Run ${this.scanType} Scan`;
+        }
     }
 
     getTreeItem(element) {
@@ -119,39 +298,34 @@ class ReportProvider {
     }
 
     async getChildren() {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) {
-            return [];
+        const homeDir = os.homedir();
+        const projectFolderName = path.basename(vscode.workspace.rootPath);
+        const reportDir = path.join(homeDir, '.ss', projectFolderName, this.scanType);
+        const files = fs.readdirSync(reportDir).map(file => {
+            return new vscode.TreeItem(path.basename(file), vscode.TreeItemCollapsibleState.None);
+        });
+
+        if (!this.runScanButton){
+
+            this.runScanButton = new vscode.TreeItem(
+                `Run ${this.scanType} Scan`,
+                vscode.TreeItemCollapsibleState.None
+                 );
+            this.runScanButton.command = {
+                command: `extension.refresh${this.scanType.charAt(0).toUpperCase() + this.scanType.slice(1)}Report`,
+                title: `Run ${this.scanType} Scan`
+            };
         }
-
-        const workspacePath = workspaceFolders[0].uri.fsPath;
-        const reportFolderPath = path.join(workspacePath, '.vscode', this.folderName);
-        const items = [];
-
-        const runScanButton = new vscode.TreeItem(`Run Scan (${this.folderName})`, vscode.TreeItemCollapsibleState.None);
-        runScanButton.command = { command: `extension.refreshReport${this.folderName === 'hemscan' ? '1' : ''}`, title: `Run Scan (${this.folderName})` };
-        items.push(runScanButton);
-
-        if (fs.existsSync(reportFolderPath)) {
-            const files = fs.readdirSync(reportFolderPath).filter(file => file.endsWith('.html'));
-            items.push(...files.map(file => new ReportItem(file, reportFolderPath)));
+        return [...files, this.runScanButton];
         }
-
-        return items;
     }
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    seconds = seconds % 60;
+    return `${minutes}m ${seconds}s`;
 }
 
-class ReportItem extends vscode.TreeItem {
-    constructor(label, folderPath) {
-        super(label);
-        this.resourceUri = vscode.Uri.file(path.join(folderPath, label));
-        this.command = {
-            command: 'extension.openReport',
-            title: 'Open Report',
-            arguments: [this.resourceUri]
-        };
-    }
-}
+
 
 exports.activate = activate;
 
