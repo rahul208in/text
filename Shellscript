@@ -19,31 +19,45 @@ create_env_json() {
 # Input file name
 input_file="input.txt"
 
-# Initialize variables
-declare -A key_values
+# Initialize variables for each key
+Id=""
+version=""
+ENVIRONMENT=""
+check=""
+service=""
+endpoint=""
 
 # Read the input file and store key-value pairs
 while IFS='=' read -r key value; do
-  key_values[$key]=$value
+  case "$key" in
+    Id) Id="$value" ;;
+    version) version="$value" ;;
+    ENVIRONMENT) ENVIRONMENT="$value" ;;
+    check) check="$value" ;;
+    service) service="$value" ;;
+    endpoint) endpoint="$value" ;;
+  esac
 done < "$input_file"
 
-# Prepare the JSON output by iterating over each key-value pair
-json_output="{"
-for key in "${!key_values[@]}"; do
-  value=${key_values[$key]}
-  
-  # Check if the key is ENVIRONMENT and replace it with the special JSON block
-  if [ "$key" == "ENVIRONMENT" ]; then
-    env_json=$(create_env_json "$value")
-    json_output="${json_output}\"env\": [ $env_json ],"
-  else
-    # Add key-value pairs to the JSON output normally
-    json_output="${json_output}\"$key\": \"$value\","
-  fi
-done
+# Prepare the environment JSON if the ENVIRONMENT variable is found
+if [ -n "$ENVIRONMENT" ]; then
+  env_json=$(create_env_json "$ENVIRONMENT")
+fi
 
-# Remove the last comma and close the JSON block
-json_output="${json_output%,}}"
+# Generate the final JSON output
+json_output=$(cat <<EOF
+{
+  "Id": "$Id",
+  "version": "$version",
+  "env": [
+    $env_json
+  ],
+  "check": "$check",
+  "service": "$service",
+  "endpoint": "$endpoint"
+}
+EOF
+)
 
 # Output the JSON to a file
 output_file="output.json"
