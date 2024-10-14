@@ -1,5 +1,20 @@
 #!/bin/bash
 
+# Check if the input file is provided as an argument
+if [ -z "$1" ]; then
+  echo "Usage: sh script.sh <inputfile>"
+  exit 1
+fi
+
+# Input file is the first argument passed to the script
+input_file="$1"
+
+# Check if the input file exists
+if [ ! -f "$input_file" ]; then
+  echo "Input file '$input_file' not found!"
+  exit 1
+fi
+
 # Function to create JSON environment entries for ENVIRONMENT variable
 create_env_json() {
   local envs=(${1//,/ })  # Split environments by commas
@@ -16,23 +31,28 @@ create_env_json() {
   echo "${env_json%,}"
 }
 
-# Input file name
-input_file="input.txt"
-
 # Initialize a variable to hold the JSON output
 json_output="{"
 
-# Read the input file and process each key-value pair
-while IFS='=' read -r key value; do
-  # If the key is ENVIRONMENT, handle it differently
-  if [ "$key" == "ENVIRONMENT" ]; then
-    env_json=$(create_env_json "$value")
-    json_output="${json_output}\"env\": [ $env_json ],"
-  else
-    # Otherwise, add the key-value pair normally
-    json_output="${json_output}\"$key\": \"$value\","
+# Source the input file (load its content into variables)
+source "$input_file"
+
+# Loop over all variables set by the input file
+for key in $(compgen -v); do
+  # Skip internal shell variables
+  if [[ $key != BASH* ]] && [[ $key != EUID ]] && [[ $key != PPID ]] && [[ $key != UID ]]; then
+    value=${!key}
+
+    # If the key is ENVIRONMENT, handle it differently
+    if [ "$key" == "ENVIRONMENT" ]; then
+      env_json=$(create_env_json "$value")
+      json_output="${json_output}\"env\": [ $env_json ],"
+    else
+      # Otherwise, add the key-value pair normally
+      json_output="${json_output}\"$key\": \"$value\","
+    fi
   fi
-done < "$input_file"
+done
 
 # Remove the last comma and close the JSON block
 json_output="${json_output%,}}"
