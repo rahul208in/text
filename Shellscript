@@ -1,3 +1,5 @@
+
+
 #!/bin/bash
 
 # Check if the input file is provided as an argument
@@ -34,25 +36,17 @@ create_env_json() {
 # Initialize a variable to hold the JSON output
 json_output="{"
 
-# Source the input file (load its content into variables)
-source "$input_file"
-
-# Loop over all variables set by the input file
-for key in $(compgen -v); do
-  # Skip internal shell variables
-  if [[ $key != BASH* ]] && [[ $key != EUID ]] && [[ $key != PPID ]] && [[ $key != UID ]]; then
-    value=${!key}
-
-    # If the key is ENVIRONMENT, handle it differently
-    if [ "$key" == "ENVIRONMENT" ]; then
-      env_json=$(create_env_json "$value")
-      json_output="${json_output}\"env\": [ $env_json ],"
-    else
-      # Otherwise, add the key-value pair normally
-      json_output="${json_output}\"$key\": \"$value\","
-    fi
+# Read the input file and process each key-value pair
+while IFS='=' read -r key value; do
+  # If the key is ENVIRONMENT, handle it differently
+  if [ "$key" == "ENVIRONMENT" ]; then
+    env_json=$(create_env_json "$value")
+    json_output="${json_output}\"env\": [ $env_json ],"
+  else
+    # Otherwise, add the key-value pair normally
+    json_output="${json_output}\"$key\": \"$value\","
   fi
-done
+done < "$input_file"
 
 # Remove the last comma and close the JSON block
 json_output="${json_output%,}}"
