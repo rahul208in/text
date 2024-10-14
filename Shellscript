@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Function to create JSON environment entries
+create_env_json() {
+  local envs=(${1//,/ })  # Split environments by commas
+  local env_json=""
+  
+  for env in "${envs[@]}"; do
+    env_json="${env_json}{
+      \"ref\": \"env\":\"${env}\",
+      \"type\":\"environment\"
+    },"
+  done
+
+  # Remove the last comma and return the JSON block
+  echo "${env_json%,}"
+}
+
+# Input file name
+input_file="input.txt"
+
+# Initialize variables
+declare -A key_values
+
+# Read the input file and store key-value pairs
+while IFS='=' read -r key value; do
+  key_values[$key]=$value
+done < "$input_file"
+
+# Prepare the JSON output by iterating over each key-value pair
+json_output="{"
+for key in "${!key_values[@]}"; do
+  value=${key_values[$key]}
+  
+  # Check if the key is ENVIRONMENT and replace it with the special JSON block
+  if [ "$key" == "ENVIRONMENT" ]; then
+    env_json=$(create_env_json "$value")
+    json_output="${json_output}\"env\": [ $env_json ],"
+  else
+    # Add key-value pairs to the JSON output normally
+    json_output="${json_output}\"$key\": \"$value\","
+  fi
+done
+
+# Remove the last comma and close the JSON block
+json_output="${json_output%,}}"
+
+# Output the JSON to a file
+output_file="output.json"
+echo "$json_output" > "$output_file"
+
+echo "Generated JSON saved to $output_file"
