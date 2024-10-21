@@ -1,81 +1,5 @@
-import React, { useState } from 'react';
 
-const FileDisplayComponent = ({ files }) => {
-  const [openedFile, setOpenedFile] = useState(null);
-  const [fileContents, setFileContents] = useState({});
-
-  const fetchFileContent = async (url) => {
-    if (fileContents[url]) {
-      setOpenedFile(openedFile === url ? null : url); // Toggle visibility if already loaded
-      return;
-    }
-
-    try {
-      const response = await fetch(url);
-      const content = await response.text();
-      setFileContents((prevContents) => ({ ...prevContents, [url]: content }));
-      setOpenedFile(url); // Open the file after fetching
-    } catch (error) {
-      console.error('Error fetching file content:', error);
-    }
-  };
-
-  return (
-    <div className="container">
-      <h2>Download the Files</h2>
-      <ul>
-        {Array.isArray(files) && files.length > 0 ? (
-          files.map((file) => (
-            <li key={file.url} className="file-item">
-              <div className="file-header">
-                <button onClick={() => fetchFileContent(file.url)}>
-                  {openedFile === file.url ? 'Hide' : 'Show'} Content for {file.name}
-                </button>
-                <a href={file.url} download={file.name}>
-                  Download {file.name}
-                </a>
-              </div>
-
-              {openedFile === file.url && (
-                <div className="file-content">
-                  <pre>{fileContents[file.url] || 'Loading content...'}</pre>
-                </div>
-              )}
-            </li>
-          ))
-        ) : (
-          <p>No files available to download.</p>
-        )}
-      </ul>
-    </div>
-  );
-};
-
-export default FileDisplayComponent;
-
-
-
-
-
-
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  font-family: Arial, sans-serif;
-}
-
-.container {
-  padding: 20px;
-  margin-top: 10px;
-}
-
-ul {
-  list-style-type: none;
-  padding: 0;
-}
-
+/* General Styles */
 .file-item {
   border: 1px solid #ddd;
   margin-bottom: 15px;
@@ -83,6 +7,7 @@ ul {
   border-radius: 5px;
 }
 
+/* Header Section with Button and Link */
 .file-header {
   display: flex;
   justify-content: space-between;
@@ -90,36 +15,50 @@ ul {
   margin-bottom: 10px;
 }
 
-button {
+/* Button Styling */
+.toggle-button {
   padding: 8px 12px;
+  margin-top: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #f0f0f0;
   cursor: pointer;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background-color: #f0f0f0;
+  transition: background-color 0.3s;
 }
 
-button:hover {
+.toggle-button:hover {
   background-color: #e0e0e0;
 }
 
-a {
-  text-decoration: none;
+/* Download Link Styling */
+.download-link {
+  display: inline-block;
+  margin-top: 10px;
   padding: 8px 12px;
+  text-decoration: none;
   border: 1px solid #ddd;
   border-radius: 4px;
   background-color: #f0f0f0;
+  cursor: pointer;
+  transition: background-color 0.3s;
 }
 
-a:hover {
+.download-link:hover {
   background-color: #e0e0e0;
 }
 
+/* Preformatted Content Styling */
 .file-content {
   margin-top: 10px;
+}
+
+.file-pre {
+  background-color: #f0f0f0;
   padding: 10px;
-  background-color: #f9f9f9;
-  border: 1px solid #ddd;
+  margin: 10px 0;
   border-radius: 4px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow: auto;
+  max-height: 300px;
+  width: 100%;
+  box-sizing: border-box;
 }
