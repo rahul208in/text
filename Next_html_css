@@ -1,0 +1,235 @@
+Here’s a simple and clean HTML and CSS layout for your form and the section that displays the returned files. This layout ensures the form and file output appear side by side with proper margins. Let me know if you need further adjustments!
+
+HTML (index.html)
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Form with File Output</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="form-container">
+      <form id="myForm">
+        <h2>Upload Parameters</h2>
+        <label for="id">ID:</label>
+        <input type="text" id="id" name="id" required>
+
+        <label for="project">Project:</label>
+        <input type="text" id="project" name="project" required>
+
+        <label for="component">Component:</label>
+        <input type="text" id="component" name="component" required>
+
+        <button type="submit">Submit</button>
+      </form>
+    </div>
+
+    <div class="files-container">
+      <h2>Generated Files</h2>
+      <div id="fileList"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('myForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const files = ['app.json', 'build.json', 'deploy.json']; // Replace with dynamic content if needed
+      const fileList = document.getElementById('fileList');
+      fileList.innerHTML = '';
+
+      files.forEach(file => {
+        const fileItem = document.createElement('div');
+        fileItem.classList.add('file-item');
+
+        const fileHeader = document.createElement('div');
+        fileHeader.classList.add('file-header');
+        fileHeader.textContent = file;
+
+        const toggleButton = document.createElement('button');
+        toggleButton.textContent = 'Show Content';
+        toggleButton.addEventListener('click', () => {
+          const content = fileItem.querySelector('.file-content');
+          content.style.display = content.style.display === 'block' ? 'none' : 'block';
+          toggleButton.textContent = content.style.display === 'block' ? 'Hide Content' : 'Show Content';
+        });
+
+        const fileContent = document.createElement('div');
+        fileContent.classList.add('file-content');
+        fileContent.textContent = 'Sample content of ' + file; // Replace with actual file content
+        fileContent.style.display = 'none';
+
+        fileHeader.appendChild(toggleButton);
+        fileItem.appendChild(fileHeader);
+        fileItem.appendChild(fileContent);
+        fileList.appendChild(fileItem);
+      });
+    });
+  </script>
+</body>
+</html>
+
+
+---
+
+CSS (styles.css)
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+}
+
+.container {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px;
+  gap: 20px;
+}
+
+.form-container, .files-container {
+  flex: 1;
+  max-width: 45%;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+button {
+  padding: 10px;
+  border: none;
+  background-color: #eee;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #ddd;
+}
+
+.file-item {
+  border: 1px solid #ddd;
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.file-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.file-content {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+
+---
+
+Explanation:
+
+1. Layout: The container div holds the form and files section side by side with flex styling.
+
+
+2. Form Design: A simple form with input fields and a submit button.
+
+
+3. Files Section: Dynamically generates a list of files. Each file has a toggle button to show or hide content.
+
+
+4. Clean Look: No colors beyond subtle borders and backgrounds to maintain a minimal appearance.
+
+
+
+This design ensures your form and files appear neatly with good alignment. Let me know if you need further customization!
+
+
+
+
+
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+}
+
+.container {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20px;
+  gap: 20px;
+}
+
+.form-container, .files-container {
+  flex: 1;
+  max-width: 45%;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+button {
+  padding: 10px;
+  border: none;
+  background-color: #eee;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #ddd;
+}
+
+.file-item {
+  border: 1px solid #ddd;
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.file-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.file-content {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
