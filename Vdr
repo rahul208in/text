@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState } from 'react';
@@ -32,25 +33,61 @@ export default function VDRPage() {
       const sbomJson = JSON.parse(sbomContent);
       const vulnJson = JSON.parse(vulnContent);
 
-      // Extract necessary data from SBOM and Vulnerabilities
+      // Extract components from SBOM
       const components = sbomJson.components || [];
-      const vulnerabilities = vulnJson.vulnerabilities || [];
 
-      // Create a CycloneDX-compatible VDR
+      // Create dependencies based on components
+      const dependencies = components.map((component) => ({
+        ref: component.purl,
+        dependsOn: [], // Add dependencies if needed
+      }));
+
+      // Map vulnerabilities to CycloneDX-compliant structure
+      const vulnerabilities = vulnJson.vulnerabilities.map((vuln) => ({
+        id: vuln.id,
+        source: {
+          name: vuln.source || 'Unknown',
+        },
+        ratings: vuln.ratings || [
+          {
+            score: 0.0,
+            severity: 'Unknown',
+            method: 'Unknown',
+          },
+        ],
+        affects: vuln.affects || [
+          {
+            ref: vuln.ref || 'Unknown',
+            versions: vuln.versions || [],
+          },
+        ],
+        analysis: {
+          state: vuln.state || 'unknown',
+          justification: vuln.justification || 'No justification provided',
+        },
+      }));
+
+      // Create metadata for the VDR
+      const metadata = {
+        timestamp: new Date().toISOString(),
+        tools: [
+          {
+            vendor: 'YourToolVendor',
+            name: 'YourToolName',
+            version: '1.0.0',
+          },
+        ],
+      };
+
+      // Assemble the complete VDR object
       const vdr = {
         bomFormat: 'CycloneDX',
         specVersion: '1.4',
         version: 1,
+        metadata: metadata,
         components: components,
-        vulnerabilities: vulnerabilities.map((vuln) => ({
-          id: vuln.id,
-          source: {
-            name: vuln.source || 'Unknown',
-          },
-          description: vuln.description,
-          recommendations: vuln.recommendations || [],
-          ratings: vuln.ratings || [],
-        })),
+        dependencies: dependencies,
+        vulnerabilities: vulnerabilities,
       };
 
       setVdrData(vdr);
