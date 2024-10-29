@@ -1,117 +1,91 @@
-import { useState } from'react';
-import { useDropzone } from'react-dropzone';
-import json from 'json';
 
-const VDRGenerator = () => {
+'use client';
+
+import { useState } from 'react';
+
+export default function VDRPage() {
   const [sbomFile, setSbomFile] = useState(null);
-  const [vulnerabilityFile, setVulnerabilityFile] = useState(null);
-  const [vdrOutput, setVdrOutput] = useState('');
+  const [vulnFile, setVulnFile] = useState(null);
+  const [vdrData, setVdrData] = useState(null);
+  const [error, setError] = useState('');
 
-  const handleSbomFileChange = (acceptedFiles) => {
-    setSbomFile(acceptedFiles[0]);
+  const handleFileChange = (e, setFile) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'application/json') {
+      setFile(file);
+      setError('');
+    } else {
+      setError('Please upload valid JSON files.');
+    }
   };
 
-  const handleVulnerabilityFileChange = (acceptedFiles) => {
-    setVulnerabilityFile(acceptedFiles[0]);
-  };
-
-  const generateVdr = async () => {
-    if (!sbomFile ||!vulnerabilityFile) {
-      alert('Please upload both SBOM and vulnerability files');
+  const generateVDR = async () => {
+    if (!sbomFile || !vulnFile) {
+      setError('Please upload both SBOM and vulnerability files.');
       return;
     }
 
     try {
-      const sbomData = await readJsonFile(sbomFile);
-      const vulnerabilityData = await readJsonFile(vulnerabilityFile);
+      const sbomContent = await sbomFile.text();
+      const vulnContent = await vulnFile.text();
 
-      const vdrData = generateVdrData(sbomData, vulnerabilityData);
-      const vdrJson = JSON.stringify(vdrData, null, 2);
+      const sbomJson = JSON.parse(sbomContent);
+      const vulnJson = JSON.parse(vulnContent);
 
-      setVdrOutput(vdrJson);
-    } catch (error) {
-      console.error(error);
+      // Mock logic to generate VDR from SBOM and Vulnerabilities JSON data
+      const vdr = {
+        sbomMetadata: sbomJson.metadata || {},
+        vulnerabilities: vulnJson.vulnerabilities || [],
+        summary: `VDR generated from ${sbomFile.name} and ${vulnFile.name}`,
+      };
+
+      setVdrData(vdr);
+      setError('');
+    } catch (err) {
+      setError('Error processing files. Please ensure the JSON format is correct.');
+      console.error(err);
     }
   };
 
-  const readJsonFile = async (file) => {
-    const fileReader = new FileReader();
-    return new Promise((resolve, reject) => {
-      fileReader.onload = (event) => {
-        try {
-          const json = JSON.parse(event.target.result);
-          resolve(json);
-        } catch (error) {
-          reject();
-        }
-      };
-      fileReader.readAsText(file);
-    });
+  const downloadVDR = () => {
+    const blob = new Blob([JSON.stringify(vdrData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'VDR.json';
+    link.click();
+    URL.revokeObjectURL(url);
   };
-
-  const generateVdrData = (sbomData, vulnerabilityData) => {
-    const vdrData = {
-      components: []
-    };
-
-    sbomData.components.forEach((component) => {
-      const vulnerabilities = [];
-      vulnerabilityData.vulnerabilities.forEach((vulnerability) => {
-        if (vulnerability.component === component.name) {
-          vulnerabilities.push({
-            id: vulnerability.id,
-            description: vulnerability.description,
-            severity: vulnerability.severity
-          });
-        }
-      });
-
-      vdrData.components.push({
-        name: component.name,
-        version: component.version,
-        vulnerabilities: vulnerabilities
-      });
-    });
-
-    return vdrData;
-  };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: handleSbomFileChange
-  });
-
-  const { getRootProps: getVulnerabilityRootProps, getInputProps: getVulnerabilityInputProps, isDragActive: isVulnerabilityDragActive } = useDropzone({
-    onDrop: handleVulnerabilityFileChange
-  });
 
   return (
-    <div>
-      <h1>VDR Generator</h1>
-      <div {...getRootProps()} className="dropzone">
-        <input {...getInputProps()} />
-        {
-          isDragActive? <p>Drop the SBOM file here...</p> : <p>Drag 'n' drop SBOM file here, or click to select file</p>
-        }
-        {sbomFile && <p>SBOM file: {sbomFile.name}</p>}
+    <div style={{ padding: '20px' }}>
+      <h1>Vulnerability Detection Report (VDR) Generator</h1>
+
+      <div>
+        <label>Upload SBOM File (CycloneDX):</label>
+        <input type="file" onChange={(e) => handleFileChange(e, setSbomFile)} accept=".json" />
       </div>
-      <div {...getVulnerabilityRootProps()} className="dropzone">
-        <input {...getVulnerabilityInputProps()} />
-        {
-          isVulnerabilityDragActive? <p>Drop the vulnerability file here...</p> : <p>Drag 'n' drop vulnerability file here, or click to select file</p>
-        }
-        {vulnerabilityFile && <p>Vulnerability file: {vulnerabilityFile.name}</p>}
+
+      <div style={{ marginTop: '10px' }}>
+        <label>Upload Vulnerability File:</label>
+        <input type="file" onChange={(e) => handleFileChange(e, setVulnFile)} accept=".json" />
       </div>
-      <button onClick={generateVdr}>Generate VDR</button>
-      {vdrOutput && (
-        <div>
-          <h2>VDR Output:</h2>
-          <pre>
-            <code>{vdrOutput}</code>
+
+      <button onClick={generateVDR} style={{ marginTop: '20px' }}>Generate VDR</button>
+
+      {error && <p style={{ color: 'red' }}>{error}</p>}
+
+      {vdrData && (
+        <div style={{ marginTop: '20px' }}>
+          <h3>Generated VDR Output:</h3>
+          <pre style={{ backgroundColor: '#f0f0f0', padding: '10px' }}>
+            {JSON.stringify(vdrData, null, 2)}
           </pre>
+          <button onClick={downloadVDR} style={{ marginTop: '10px' }}>
+            Download VDR
+          </button>
         </div>
       )}
     </div>
   );
-};
-
-export default VDRGenerator;
+}
