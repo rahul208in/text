@@ -1,0 +1,102 @@
+import { useState } from'react';
+import JsonSchema from 'jsonschema';
+import yaml from 'js-yaml';
+import merge from 'json-merge-patch';
+
+const VDRGenerator = () => {
+  const [sbom, setSbom] = useState('');
+  const [vulnerability, setVulnerability] = useState('');
+  const [vdr, setVdr] = useState('');
+
+  const handleSbomChange = (event) => {
+    setSbom(event.target.value);
+  };
+
+  const handleVulnerabilityChange = (event) => {
+    setVulnerability(event.target.value);
+  };
+
+  const generateVdr = () => {
+    try {
+      const sbomJson = JSON.parse(sbom);
+      const vulnerabilityJson = JSON.parse(vulnerability);
+
+      const vdrSchema = {
+        type: 'object',
+        properties: {
+          components: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type:'string' },
+                version: { type:'string' },
+                vulnerabilities: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type:'string' },
+                      description: { type:'string' },
+                      severity: { type:'string' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const vdrData = {
+        components: [],
+      };
+
+      sbomJson.components.forEach((component) => {
+        const vulnerabilities = vulnerabilityJson.vulnerabilities.filter(
+          (vuln) => vuln.component === component.name
+        );
+
+        vdrData.components.push({
+          name: component.name,
+          version: component.version,
+          vulnerabilities,
+        });
+      });
+
+      const vdrYaml = yaml.dump(vdrData);
+      setVdr(vdrYaml);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return (
+    <div>
+      <h1>VDR Generator</h1>
+      <form>
+        <label>
+          SBOM JSON:
+          <textarea value={sbom} onChange={handleSbomChange} />
+        </label>
+        
+
+        <label>
+          Vulnerability JSON:
+          <textarea value={vulnerability} onChange={handleVulnerabilityChange} />
+        </label>
+        
+
+        <button type="button" onClick={generateVdr}>
+          Generate VDR
+        </button>
+      </form>
+      <h2>VDR Output:</h2>
+      <pre>
+        <code>{vdr}</code>
+      </pre>
+    </div>
+  );
+};
+
+export default VDRGenerator;
