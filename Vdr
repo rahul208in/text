@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -19,11 +20,6 @@ export default function VDRPage() {
   };
 
   const generateVDR = async () => {
-    if (!sbomFile || !vulnFile) {
-      setError('Please upload both SBOM and vulnerability files.');
-      return;
-    }
-
     try {
       const sbomContent = await sbomFile.text();
       const vulnContent = await vulnFile.text();
@@ -31,122 +27,29 @@ export default function VDRPage() {
       const sbomJson = JSON.parse(sbomContent);
       const vulnJson = JSON.parse(vulnContent);
 
-      // Validate SBOM and Vulnerability JSON structure
-      if (!Array.isArray(sbomJson.components) || !Array.isArray(vulnJson.vulnerabilities)) {
-        throw new Error('Invalid JSON structure.');
-      }
-
-      const components = sbomJson.components.map((component) => ({
-        name: component.name,
-        version: component.version,
-        purl: component.purl || `pkg:npm/${component.name}@${component.version}`,
-      }));
-
-      const dependencies = components.map((component) => ({
-        ref: component.purl,
-        dependsOn: [],
-      }));
-
-      const vulnerabilities = vulnJson.vulnerabilities.map((vuln) => ({
-        id: vuln.id || vuln.moduleName,
-        source: { name: 'Snyk', url: 'https://snyk.io' },
-        title: vuln.title,
-        description: vuln.description,
-        severity: vuln.severity,
-        credit: vuln.credit || [],
-        cwes: vuln.identifiers?.CWE || [],
-        analysis: {
-          state: vuln.isPatchable ? 'patchable' : 'unpatchable',
-          responses: vuln.upgradePath.filter((path) => path),
-        },
-        affects: [
-          {
-            ref: `pkg:npm/${vuln.packageName}@${vuln.version}`,
-            versions: [
-              {
-                version: vuln.version,
-                status: vuln.isUpgradable ? 'VULNERABLE' : 'UNAFFECTED',
-              },
-            ],
-          },
-        ],
-        ratings: [
-          {
-            score: parseFloat(vuln.CVSSv3?.split('/')[2]?.split(':')[1]) || 0,
-            severity: vuln.severity,
-            method: 'CVSSv3',
-          },
-        ],
-      }));
-
-      const metadata = {
-        timestamp: new Date().toISOString(),
-        tools: [
-          {
-            vendor: 'YourToolVendor',
-            name: 'YourToolName',
-            version: '1.0.0',
-          },
-        ],
-      };
-
       const vdr = {
         bomFormat: 'CycloneDX',
         specVersion: '1.4',
         version: 1,
-        metadata,
-        components,
-        dependencies,
-        vulnerabilities,
+        metadata: sbomJson.metadata,
+        components: sbomJson.components,
+        vulnerabilities: vulnJson.vulnerabilities
       };
 
       setVdrData(vdr);
-      setError('');
     } catch (err) {
-      console.error('Error processing files:', err.message);
-      setError('Error processing files. Please ensure the JSON format is correct.');
+      console.error('Error:', err);
+      setError('Invalid JSON structure. Please check your files.');
     }
   };
 
-  const downloadVDR = () => {
-    const blob = new Blob([JSON.stringify(vdrData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'VDR.json';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
-    <div style={{ padding: '20px' }}>
-      <h1>Vulnerability Detection Report (VDR) Generator</h1>
+    <div>
+      <input type="file" onChange={(e) => handleFileChange(e, setSbomFile)} />
+      <input type="file" onChange={(e) => handleFileChange(e, setVulnFile)} />
+      <button onClick={generateVDR}>Generate VDR</button>
 
-      <div>
-        <label>Upload SBOM File (CycloneDX):</label>
-        <input type="file" onChange={(e) => handleFileChange(e, setSbomFile)} accept=".json" />
-      </div>
-
-      <div style={{ marginTop: '10px' }}>
-        <label>Upload Vulnerability File:</label>
-        <input type="file" onChange={(e) => handleFileChange(e, setVulnFile)} accept=".json" />
-      </div>
-
-      <button onClick={generateVDR} style={{ marginTop: '20px' }}>Generate VDR</button>
-
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-
-      {vdrData && (
-        <div style={{ marginTop: '20px' }}>
-          <h3>Generated VDR Output:</h3>
-          <pre style={{ backgroundColor: '#f0f0f0', padding: '10px' }}>
-            {JSON.stringify(vdrData, null, 2)}
-          </pre>
-          <button onClick={downloadVDR} style={{ marginTop: '10px' }}>
-            Download VDR
-          </button>
-        </div>
-      )}
+      {vdrData && <pre>{JSON.stringify(vdrData, null, 2)}</pre>}
     </div>
   );
 }
