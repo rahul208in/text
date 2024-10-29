@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useState } from 'react';
@@ -38,33 +36,41 @@ export default function VDRPage() {
 
       // Create dependencies based on components
       const dependencies = components.map((component) => ({
-        ref: component.purl,
+        ref: component.purl || component.name,
         dependsOn: [], // Add dependencies if needed
       }));
 
       // Map vulnerabilities to CycloneDX-compliant structure
       const vulnerabilities = vulnJson.vulnerabilities.map((vuln) => ({
-        id: vuln.id,
-        source: {
-          name: vuln.source || 'Unknown',
-        },
-        ratings: vuln.ratings || [
-          {
-            score: 0.0,
-            severity: 'Unknown',
-            method: 'Unknown',
-          },
-        ],
-        affects: vuln.affects || [
-          {
-            ref: vuln.ref || 'Unknown',
-            versions: vuln.versions || [],
-          },
-        ],
+        id: vuln.id || vuln.moduleName,
+        source: { name: 'Snyk', url: 'https://snyk.io' },
+        title: vuln.title,
+        description: vuln.description,
+        severity: vuln.severity,
+        credit: vuln.credit || [],
+        cwes: vuln.identifiers?.CWE || [],
         analysis: {
-          state: vuln.state || 'unknown',
-          justification: vuln.justification || 'No justification provided',
+          state: vuln.isPatchable ? 'patchable' : 'unpatchable',
+          responses: vuln.upgradePath.filter((path) => path),
         },
+        affects: [
+          {
+            ref: `pkg:npm/${vuln.packageName}@${vuln.version}`,
+            versions: [
+              {
+                version: vuln.version,
+                status: vuln.isUpgradable ? 'VULNERABLE' : 'UNAFFECTED',
+              },
+            ],
+          },
+        ],
+        ratings: [
+          {
+            score: parseFloat(vuln.CVSSv3.split('/')[2].split(':')[1]),
+            severity: vuln.severity,
+            method: 'CVSSv3',
+          },
+        ],
       }));
 
       // Create metadata for the VDR
