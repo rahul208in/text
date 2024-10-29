@@ -31,16 +31,22 @@ export default function VDRPage() {
       const sbomJson = JSON.parse(sbomContent);
       const vulnJson = JSON.parse(vulnContent);
 
-      // Extract components from SBOM
-      const components = sbomJson.components || [];
+      // Validate SBOM and Vulnerability JSON structure
+      if (!Array.isArray(sbomJson.components) || !Array.isArray(vulnJson.vulnerabilities)) {
+        throw new Error('Invalid JSON structure.');
+      }
 
-      // Create dependencies based on components
-      const dependencies = components.map((component) => ({
-        ref: component.purl || component.name,
-        dependsOn: [], // Add dependencies if needed
+      const components = sbomJson.components.map((component) => ({
+        name: component.name,
+        version: component.version,
+        purl: component.purl || `pkg:npm/${component.name}@${component.version}`,
       }));
 
-      // Map vulnerabilities to CycloneDX-compliant structure
+      const dependencies = components.map((component) => ({
+        ref: component.purl,
+        dependsOn: [],
+      }));
+
       const vulnerabilities = vulnJson.vulnerabilities.map((vuln) => ({
         id: vuln.id || vuln.moduleName,
         source: { name: 'Snyk', url: 'https://snyk.io' },
@@ -66,14 +72,13 @@ export default function VDRPage() {
         ],
         ratings: [
           {
-            score: parseFloat(vuln.CVSSv3.split('/')[2].split(':')[1]),
+            score: parseFloat(vuln.CVSSv3?.split('/')[2]?.split(':')[1]) || 0,
             severity: vuln.severity,
             method: 'CVSSv3',
           },
         ],
       }));
 
-      // Create metadata for the VDR
       const metadata = {
         timestamp: new Date().toISOString(),
         tools: [
@@ -85,22 +90,21 @@ export default function VDRPage() {
         ],
       };
 
-      // Assemble the complete VDR object
       const vdr = {
         bomFormat: 'CycloneDX',
         specVersion: '1.4',
         version: 1,
-        metadata: metadata,
-        components: components,
-        dependencies: dependencies,
-        vulnerabilities: vulnerabilities,
+        metadata,
+        components,
+        dependencies,
+        vulnerabilities,
       };
 
       setVdrData(vdr);
       setError('');
     } catch (err) {
+      console.error('Error processing files:', err.message);
       setError('Error processing files. Please ensure the JSON format is correct.');
-      console.error(err);
     }
   };
 
