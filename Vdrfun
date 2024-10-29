@@ -1,0 +1,73 @@
+const generateVDR = async () => {
+  if (!sbomFile || !vulnFile) {
+    setError('Please upload both SBOM and vulnerability files.');
+    return;
+  }
+
+  try {
+    const sbomJson = await parseJSON(sbomFile);
+    const vulnJson = await parseJSON(vulnFile);
+
+    // Validate the JSON structures with fallback checks
+    if (!Array.isArray(sbomJson.components)) {
+      throw new Error('SBOM file is missing a valid components array.');
+    }
+    if (!Array.isArray(sbomJson.dependencies)) {
+      throw new Error('SBOM file is missing a valid dependencies array.');
+    }
+    if (!Array.isArray(vulnJson.vulnerabilities)) {
+      throw new Error('Vulnerability file is missing a valid vulnerabilities array.');
+    }
+
+    // Safely extract dependencies with fallback to avoid crashes
+    const dependencies = (sbomJson.dependencies || []).map((dep) => ({
+      ref: dep.ref || '',
+      dependencies: (dep.dependsOn || []).map((d) => ({ ref: d })),
+    }));
+
+    // Safely map vulnerabilities with fallback
+    const vulnerabilities = (vulnJson.vulnerabilities || []).map((vuln) => ({
+      id: vuln.id || vuln.moduleName || 'Unknown',
+      source: { 
+        name: vuln.source?.name || 'Snyk', 
+        url: vuln.source?.url || '' 
+      },
+      affects: (vuln.affects || []).map((affect) => ({
+        ref: affect.ref || '',
+        versions: (affect.versions || []).map((version) => ({
+          version: version.version || 'Unknown',
+          status: version.status || 'Unknown',
+        })),
+      })),
+      analysis: {
+        responses: vuln.analysis?.responses || [],
+        state: vuln.analysis?.state || 'unknown',
+      },
+      cwes: vuln.cwes || [],
+      ratings: (vuln.ratings || []).map((rating) => ({
+        method: rating.method || 'Unknown',
+        score: rating.score || 0,
+        severity: rating.severity || 'Unknown',
+        source: rating.source || {},
+        vector: rating.vector || '',
+      })),
+      references: vuln.references || [],
+    }));
+
+    const vdr = {
+      bomFormat: 'CycloneDX',
+      specVersion: '1.4',
+      version: 1,
+      metadata: sbomJson.metadata || {},
+      components: sbomJson.components || [],
+      dependencies: dependencies,
+      vulnerabilities: vulnerabilities,
+    };
+
+    setVdrData(vdr);
+    setError('');
+  } catch (err) {
+    console.error('Error:', err.message);
+    setError(err.message);
+  }
+};
