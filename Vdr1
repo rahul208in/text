@@ -1,3 +1,5 @@
+
+
 'use client';
 
 import { useState } from 'react';
@@ -18,21 +20,44 @@ export default function VDRPage() {
     }
   };
 
-  const generateVDR = async () => {
+  const parseJSON = async (file) => {
     try {
-      const sbomContent = await sbomFile.text();
-      const vulnContent = await vulnFile.text();
+      const content = await file.text();
+      return JSON.parse(content);
+    } catch (err) {
+      throw new Error('Invalid JSON format.');
+    }
+  };
 
-      const sbomJson = JSON.parse(sbomContent);
-      const vulnJson = JSON.parse(vulnContent);
+  const validateStructure = (sbomJson, vulnJson) => {
+    if (!sbomJson.components || !sbomJson.dependencies) {
+      throw new Error('SBOM file missing components or dependencies.');
+    }
+    if (!vulnJson.vulnerabilities) {
+      throw new Error('Vulnerability file missing vulnerabilities section.');
+    }
+  };
 
-      // Extract dependencies from SBOM components
+  const generateVDR = async () => {
+    if (!sbomFile || !vulnFile) {
+      setError('Please upload both SBOM and vulnerability files.');
+      return;
+    }
+
+    try {
+      const sbomJson = await parseJSON(sbomFile);
+      const vulnJson = await parseJSON(vulnFile);
+
+      // Validate the JSON structures
+      validateStructure(sbomJson, vulnJson);
+
+      // Extract dependencies
       const dependencies = sbomJson.dependencies.map((dep) => ({
         ref: dep.ref,
         dependencies: dep.dependsOn.map((d) => ({ ref: d })),
       }));
 
-      // Map vulnerabilities to CycloneDX-compliant structure
+      // Map vulnerabilities to CycloneDX-compliant format
       const vulnerabilities = vulnJson.vulnerabilities.map((vuln) => ({
         id: vuln.id || vuln.moduleName,
         source: { name: vuln.source?.name || 'Snyk', url: vuln.source?.url || '' },
@@ -58,7 +83,6 @@ export default function VDRPage() {
         references: vuln.references || [],
       }));
 
-      // Assemble the VDR object with dependencies and vulnerabilities
       const vdr = {
         bomFormat: 'CycloneDX',
         specVersion: '1.4',
@@ -71,8 +95,8 @@ export default function VDRPage() {
 
       setVdrData(vdr);
     } catch (err) {
-      console.error('Error:', err);
-      setError('Invalid JSON structure. Please check your files.');
+      console.error('Error:', err.message);
+      setError(err.message);
     }
   };
 
@@ -87,7 +111,7 @@ export default function VDRPage() {
   };
 
   return (
-    <div>
+    <div style={{ padding: '20px' }}>
       <h1>Generate VDR (Vulnerability Detection Report)</h1>
 
       <div>
