@@ -32,11 +32,25 @@ export default function VDRPage() {
       const sbomJson = JSON.parse(sbomContent);
       const vulnJson = JSON.parse(vulnContent);
 
-      // Mock logic to generate VDR from SBOM and Vulnerabilities JSON data
+      // Extract necessary data from SBOM and Vulnerabilities
+      const components = sbomJson.components || [];
+      const vulnerabilities = vulnJson.vulnerabilities || [];
+
+      // Create a CycloneDX-compatible VDR
       const vdr = {
-        sbomMetadata: sbomJson.metadata || {},
-        vulnerabilities: vulnJson.vulnerabilities || [],
-        summary: `VDR generated from ${sbomFile.name} and ${vulnFile.name}`,
+        bomFormat: 'CycloneDX',
+        specVersion: '1.4',
+        version: 1,
+        components: components,
+        vulnerabilities: vulnerabilities.map((vuln) => ({
+          id: vuln.id,
+          source: {
+            name: vuln.source || 'Unknown',
+          },
+          description: vuln.description,
+          recommendations: vuln.recommendations || [],
+          ratings: vuln.ratings || [],
+        })),
       };
 
       setVdrData(vdr);
