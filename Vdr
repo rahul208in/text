@@ -27,13 +27,47 @@ export default function VDRPage() {
       const sbomJson = JSON.parse(sbomContent);
       const vulnJson = JSON.parse(vulnContent);
 
+      // Extract dependencies from SBOM components
+      const dependencies = sbomJson.dependencies.map((dep) => ({
+        ref: dep.ref,
+        dependencies: dep.dependsOn.map((d) => ({ ref: d })),
+      }));
+
+      // Map vulnerabilities to CycloneDX-compliant structure
+      const vulnerabilities = vulnJson.vulnerabilities.map((vuln) => ({
+        id: vuln.id || vuln.moduleName,
+        source: { name: vuln.source?.name || 'Snyk', url: vuln.source?.url || '' },
+        affects: vuln.affects.map((affect) => ({
+          ref: affect.ref,
+          versions: affect.versions.map((version) => ({
+            version: version.version,
+            status: version.status,
+          })),
+        })),
+        analysis: {
+          responses: vuln.analysis?.responses || [],
+          state: vuln.analysis?.state || 'unknown',
+        },
+        cwes: vuln.cwes || [],
+        ratings: vuln.ratings.map((rating) => ({
+          method: rating.method,
+          score: rating.score,
+          severity: rating.severity,
+          source: rating.source,
+          vector: rating.vector,
+        })),
+        references: vuln.references || [],
+      }));
+
+      // Assemble the VDR object with dependencies and vulnerabilities
       const vdr = {
         bomFormat: 'CycloneDX',
         specVersion: '1.4',
         version: 1,
         metadata: sbomJson.metadata,
         components: sbomJson.components,
-        vulnerabilities: vulnJson.vulnerabilities
+        dependencies: dependencies,
+        vulnerabilities: vulnerabilities,
       };
 
       setVdrData(vdr);
@@ -43,13 +77,45 @@ export default function VDRPage() {
     }
   };
 
+  const downloadVDR = () => {
+    const blob = new Blob([JSON.stringify(vdrData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'VDR.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
-      <input type="file" onChange={(e) => handleFileChange(e, setSbomFile)} />
-      <input type="file" onChange={(e) => handleFileChange(e, setVulnFile)} />
-      <button onClick={generateVDR}>Generate VDR</button>
+      <h1>Generate VDR (Vulnerability Detection Report)</h1>
 
-      {vdrData && <pre>{JSON.stringify(vdrData, null, 2)}</pre>}
+      <div>
+        <label>Upload SBOM File:</label>
+        <input type="file" onChange={(e) => handleFileChange(e, setSbomFile)} accept=".json" />
+      </div>
+
+      <div style={{ marginTop: '10px' }}>
+        <label>Upload Vulnerability File:</label>
+        <input type="file" onChange={(e) => handleFileChange(e, setVulnFile)} accept=".json" />
+      </div>
+
+      <button onClick={generateVDR} style={{ marginTop: '20px' }}>Generate VDR</button>
+
+      {error && <p style={{ color: 'red' }}>{error}</p>}
+
+      {vdrData && (
+        <div style={{ marginTop: '20px' }}>
+          <h3>Generated VDR Output:</h3>
+          <pre style={{ backgroundColor: '#f0f0f0', padding: '10px' }}>
+            {JSON.stringify(vdrData, null, 2)}
+          </pre>
+          <button onClick={downloadVDR} style={{ marginTop: '10px' }}>
+            Download VDR
+          </button>
+        </div>
+      )}
     </div>
   );
 }
