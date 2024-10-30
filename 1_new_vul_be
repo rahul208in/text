@@ -16,31 +16,33 @@ export async function POST(req) {
       throw new Error('Missing required parameters or file.');
     }
 
-    // Step 2: Read the content of the uploaded JSON file
-    const fileContent = await file.text(); // Read the file content as text
+    // Step 2: Read and parse the uploaded JSON file
+    const fileContent = await file.text(); // Read file content as text
     const jsonData = JSON.parse(fileContent);
     const vulnerabilities = jsonData.vulnerabilities || [];
 
-    // Step 3: Map vulnerabilities to CSV format
-    const csvData = vulnerabilities.map((vuln) => ({
-      CVE: vuln.identifiers?.CVE?.[0] || '',
-      'REPO URL': param1,
-      PACKAGE: vuln.packageName,
-      'PACKAGE VERSION': vuln.version,
-      SEVERITY: vuln.severity,
-      score: vuln.cvssScore || '',
-      'has fixed': vuln.fixedIn?.length > 0 ? 'y' : 'n',
-      'fixed version': vuln.fixedIn?.[0] || '',
-      description: `${vuln.id}: ${vuln.description}`,
-      'repo name': param2,
-      sha256: 'commit',
-      branch: 'main',
-    }));
+    // Step 3: Filter and map vulnerabilities to CSV format
+    const filteredVulnerabilities = vulnerabilities
+      .filter((vuln) => vuln.id.startsWith('SNYK')) // Ignore "snyk:lic" IDs
+      .map((vuln) => ({
+        CVE: vuln.identifiers?.CVE?.[0] || '',
+        'REPO URL': param1,
+        PACKAGE: vuln.packageName,
+        'PACKAGE VERSION': vuln.version,
+        SEVERITY: vuln.severity,
+        score: vuln.cvssScore || '',
+        'has fixed': vuln.fixedIn?.length > 0 ? 'y' : 'n',
+        'fixed version': vuln.fixedIn?.join(', ') || '', // Show all fixed versions
+        description: `${vuln.id}: ${vuln.description}`,
+        'repo name': param2,
+        sha256: 'commit',
+        branch: 'main',
+      }));
 
-    console.log('CSV Data:', csvData); // Debugging log
+    console.log('Filtered CSV Data:', filteredVulnerabilities); // Debugging log
 
     // Step 4: Convert data to CSV format
-    const csv = parse(csvData, {
+    const csv = parse(filteredVulnerabilities, {
       fields: [
         'CVE',
         'REPO URL',
