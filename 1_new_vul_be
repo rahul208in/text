@@ -12,24 +12,41 @@ export const config = {
 
 export async function POST(req) {
   try {
-    // Parse form data
+    // Step 1: Parse form data
     const form = new formidable.IncomingForm();
     const { fields, files } = await new Promise((resolve, reject) => {
       form.parse(req, (err, fields, files) => {
-        if (err) reject(err);
-        else resolve({ fields, files });
+        if (err) {
+          console.error('Error parsing form data:', err);
+          reject(err);
+        } else {
+          console.log('Parsed fields:', fields);
+          console.log('Parsed files:', files);
+          resolve({ fields, files });
+        }
       });
     });
 
+    // Step 2: Validate inputs
     const param1 = fields.param1;
     const param2 = fields.param2;
+    if (!param1 || !param2) {
+      throw new Error('Missing required parameters: param1 or param2');
+    }
 
-    // Read the uploaded JSON file
+    if (!files.file) {
+      throw new Error('Uploaded file is missing');
+    }
+
+    // Step 3: Read and parse the uploaded JSON file
+    console.log('Reading file:', files.file.filepath);
     const fileContent = await fs.readFile(files.file.filepath, 'utf-8');
     const jsonData = JSON.parse(fileContent);
+    console.log('Parsed JSON data:', jsonData);
+
     const vulnerabilities = jsonData.vulnerabilities || [];
 
-    // Transform data into CSV
+    // Step 4: Transform data into CSV
     const csvData = vulnerabilities.map((vuln) => ({
       CVE: vuln.identifiers?.CVE?.[0] || '',
       'REPO URL': param1,
@@ -44,6 +61,8 @@ export async function POST(req) {
       sha256: 'commit',
       branch: 'main',
     }));
+
+    console.log('CSV Data:', csvData);
 
     const csv = parse(csvData, {
       fields: [
@@ -62,7 +81,7 @@ export async function POST(req) {
       ],
     });
 
-    // Return the CSV as a response
+    // Step 5: Return the CSV as a response
     return new Response(csv, {
       headers: {
         'Content-Type': 'text/csv',
@@ -70,9 +89,13 @@ export async function POST(req) {
       },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: 'Error processing request' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('Error processing request:', error);
+    return new Response(
+      JSON.stringify({ error: error.message || 'Internal Server Error' }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 }
