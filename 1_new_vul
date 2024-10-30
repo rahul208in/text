@@ -1,13 +1,16 @@
+
 import { useState } from 'react';
 
 export default function Home() {
   const [file, setFile] = useState(null);
   const [param1, setParam1] = useState('');
   const [param2, setParam2] = useState('');
+  const [csvData, setCsvData] = useState('');
   const [csvLink, setCsvLink] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('param1', param1);
@@ -18,7 +21,10 @@ export default function Home() {
       body: formData,
     });
 
-    const blob = await response.blob();
+    const csv = await response.text();
+    setCsvData(csv);
+
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     setCsvLink(url);
   };
@@ -49,10 +55,15 @@ export default function Home() {
         />
         <button type="submit">Convert to CSV</button>
       </form>
-      {csvLink && (
-        <a href={csvLink} download="vulnerabilities.csv">
-          Download CSV
-        </a>
+
+      {csvData && (
+        <div>
+          <h2>CSV Data</h2>
+          <pre>{csvData}</pre>
+          <a href={csvLink} download="vulnerabilities.csv">
+            Download CSV
+          </a>
+        </div>
       )}
     </div>
   );
