@@ -1,3 +1,4 @@
+
 import formidable from 'formidable';
 import fs from 'fs';
 import { parse } from 'json2csv';
@@ -28,9 +29,9 @@ export default async function handler(req, res) {
     const csvData = vulnerabilities.map((vuln) => ({
       CVE: vuln.identifiers?.CVE?.[0] || '',
       'REPO URL': param1,
-      'PACKAGE': vuln.packageName,
+      PACKAGE: vuln.packageName,
       'PACKAGE VERSION': vuln.version,
-      'SEVERITY': vuln.severity,
+      SEVERITY: vuln.severity,
       score: vuln.cvssScore || '',
       'has fixed': vuln.fixedIn?.length > 0 ? 'y' : 'n',
       'fixed version': vuln.fixedIn?.[0] || '',
@@ -58,7 +59,6 @@ export default async function handler(req, res) {
     });
 
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=vulnerabilities.csv');
     res.status(200).send(csv);
   });
 }
