@@ -1,0 +1,59 @@
+import { useState } from 'react';
+
+export default function Home() {
+  const [file, setFile] = useState(null);
+  const [param1, setParam1] = useState('');
+  const [param2, setParam2] = useState('');
+  const [csvLink, setCsvLink] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('param1', param1);
+    formData.append('param2', param2);
+
+    const response = await fetch('/api/convert', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    setCsvLink(url);
+  };
+
+  return (
+    <div>
+      <h1>Convert JSON to CSV</h1>
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          placeholder="Parameter 1"
+          value={param1}
+          onChange={(e) => setParam1(e.target.value)}
+          required
+        />
+        <input
+          type="text"
+          placeholder="Parameter 2"
+          value={param2}
+          onChange={(e) => setParam2(e.target.value)}
+          required
+        />
+        <input
+          type="file"
+          accept=".json"
+          onChange={(e) => setFile(e.target.files[0])}
+          required
+        />
+        <button type="submit">Convert to CSV</button>
+      </form>
+      {csvLink && (
+        <a href={csvLink} download="vulnerabilities.csv">
+          Download CSV
+        </a>
+      )}
+    </div>
+  );
+}
