@@ -77,3 +77,13 @@ export async function POST(req) {
     );
   }
 }
+
+
+
+
+
+
+
+How to create a CON definition file and submit it to a performance First, visit http://localhost:3000/.to create the app and define the build. Please ensure that version 1.0.2 is selected. This creates the app and builds the SBOM. Step 2: Get your code from SRC and use the following to create CycloneDX SBOM. order. Mysbom.json snyk sbom --format=cyclonedx1.4+json Step 3: Use this command to create a vulnerability report for the same code. The output of the snyk test is vuln.json. Step 4: To convert a vulnerability JSON file to a CSV file that is compatible with Concert, visit http://localhost:3000/vul. Give the repository name (pipename in input 2), upload vulnerability, and repository URL (purl url in input 1).JSON file. It will convert to a CSV file that is compatible with IBM Concert, which you can then download. You can now access the IBM Concert URL to log in.
+
+
