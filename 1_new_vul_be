@@ -1,0 +1,64 @@
+import formidable from 'formidable';
+import fs from 'fs';
+import { parse } from 'json2csv';
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method Not Allowed' });
+  }
+
+  const form = new formidable.IncomingForm();
+  form.parse(req, async (err, fields, files) => {
+    if (err) {
+      return res.status(500).json({ message: 'Error parsing form data' });
+    }
+
+    const param1 = fields.param1;
+    const param2 = fields.param2;
+    const fileContent = fs.readFileSync(files.file.filepath, 'utf-8');
+    const jsonData = JSON.parse(fileContent);
+
+    const vulnerabilities = jsonData.vulnerabilities || [];
+    const csvData = vulnerabilities.map((vuln) => ({
+      CVE: vuln.identifiers?.CVE?.[0] || '',
+      'REPO URL': param1,
+      'PACKAGE': vuln.packageName,
+      'PACKAGE VERSION': vuln.version,
+      'SEVERITY': vuln.severity,
+      score: vuln.cvssScore || '',
+      'has fixed': vuln.fixedIn?.length > 0 ? 'y' : 'n',
+      'fixed version': vuln.fixedIn?.[0] || '',
+      description: `${vuln.id}: ${vuln.description}`,
+      'repo name': param2,
+      sha256: 'commit',
+      branch: 'main',
+    }));
+
+    const csv = parse(csvData, {
+      fields: [
+        'CVE',
+        'REPO URL',
+        'PACKAGE',
+        'PACKAGE VERSION',
+        'SEVERITY',
+        'score',
+        'has fixed',
+        'fixed version',
+        'description',
+        'repo name',
+        'sha256',
+        'branch',
+      ],
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=vulnerabilities.csv');
+    res.status(200).send(csv);
+  });
+}
