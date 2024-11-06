@@ -1,13 +1,15 @@
 
+
 "use client";
 
 import { useState } from 'react';
+import Papa from 'papaparse';  // Import papaparse library for robust CSV parsing
 
 export default function Home() {
   const [file, setFile] = useState(null);
   const [param1, setParam1] = useState('');
   const [param2, setParam2] = useState('');
-  const [csvData, setCsvData] = useState('');
+  const [csvData, setCsvData] = useState([]);
   const [csvLink, setCsvLink] = useState(null);
   const [expandedRow, setExpandedRow] = useState(null);
 
@@ -32,7 +34,7 @@ export default function Home() {
       }
 
       const csv = await response.text();
-      setCsvData(csv);
+      parseCsvData(csv);
 
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
@@ -43,37 +45,19 @@ export default function Home() {
     }
   };
 
-  const parseCsv = (csv) => {
-    const rows = csv.split('\n').filter(row => row.trim() !== '');
-    return rows.map(row => {
-      const cells = [];
-      let inQuotes = false;
-      let cell = '';
-
-      for (let i = 0; i < row.length; i++) {
-        const char = row[i];
-
-        if (char === '"' && row[i + 1] === '"') {
-          cell += '"'; // handle escaped double quotes
-          i++; // skip the next character
-        } else if (char === '"') {
-          inQuotes = !inQuotes; // toggle inQuotes state
-        } else if (char === ',' && !inQuotes) {
-          cells.push(cell.trim());
-          cell = '';
-        } else {
-          cell += char;
-        }
-      }
-      cells.push(cell.trim()); // add the last cell
-      return cells;
+  const parseCsvData = (csv) => {
+    Papa.parse(csv, {
+      header: false,
+      skipEmptyLines: true,
+      complete: (result) => {
+        setCsvData(result.data);
+      },
     });
   };
 
   const renderCsvTable = () => {
-    const rows = parseCsv(csvData);
-    const headers = rows[0] || [];
-    const dataRows = rows.slice(1);
+    const headers = csvData[0] || [];
+    const dataRows = csvData.slice(1);
 
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
@@ -149,7 +133,7 @@ export default function Home() {
         </button>
       </form>
 
-      {csvData && (
+      {csvData.length > 0 && (
         <div>
           <h2>CSV Data</h2>
           <div style={{ overflowX: 'auto', marginBottom: '10px' }}>
