@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState } from 'react';
@@ -46,12 +45,29 @@ export default function Home() {
 
   const parseCsv = (csv) => {
     const rows = csv.split('\n').filter(row => row.trim() !== '');
-    const parsedRows = rows.map(row => {
-      // Match quoted or unquoted fields, handling commas inside quotes correctly
-      const matches = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
-      return matches ? matches.map(cell => cell.replace(/(^"|"$)/g, '')) : [];
+    return rows.map(row => {
+      const cells = [];
+      let inQuotes = false;
+      let cell = '';
+
+      for (let i = 0; i < row.length; i++) {
+        const char = row[i];
+
+        if (char === '"' && row[i + 1] === '"') {
+          cell += '"'; // handle escaped double quotes
+          i++; // skip the next character
+        } else if (char === '"') {
+          inQuotes = !inQuotes; // toggle inQuotes state
+        } else if (char === ',' && !inQuotes) {
+          cells.push(cell.trim());
+          cell = '';
+        } else {
+          cell += char;
+        }
+      }
+      cells.push(cell.trim()); // add the last cell
+      return cells;
     });
-    return parsedRows;
   };
 
   const renderCsvTable = () => {
