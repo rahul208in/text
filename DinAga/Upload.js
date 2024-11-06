@@ -1,8 +1,9 @@
 
+// app/upload/page.js
 import React from 'react';
 import * as XLSX from 'xlsx';
-import { useFiles } from '../context/FileContext';
-import { useRouter } from 'next/router';
+import { useFiles } from '../../context/FileContext';
+import { useRouter } from 'next/navigation';
 
 const UploadPage = () => {
   const { files, addFile, deleteFile } = useFiles();
