@@ -64,25 +64,29 @@ const UploadPage = () => {
         style={{ marginBottom: '10px', padding: '8px', cursor: 'pointer' }}
       />
       <h3>Uploaded Files:</h3>
-      <ul>
-        {files.map((file, idx) => (
-          <li key={idx} style={{ marginBottom: '10px' }}>
-            {file}
-            <button onClick={() => handleFileSelect(file)} style={{ marginLeft: '10px' }}>
-              Select
-            </button>
-            <button
-              onClick={async () => {
-                await fetch(`/api/files/delete?fileName=${file}`, { method: 'DELETE' });
-                fetchFiles();
-              }}
-              style={{ marginLeft: '10px', color: 'red' }}
-            >
-              Delete
-            </button>
-          </li>
-        ))}
-      </ul>
+      {files.length > 0 ? (
+        <ul>
+          {files.map((file, idx) => (
+            <li key={idx} style={{ marginBottom: '10px' }}>
+              {file}
+              <button onClick={() => handleFileSelect(file)} style={{ marginLeft: '10px' }}>
+                Select
+              </button>
+              <button
+                onClick={async () => {
+                  await fetch(`/api/files/delete?fileName=${file}`, { method: 'DELETE' });
+                  fetchFiles();
+                }}
+                style={{ marginLeft: '10px', color: 'red' }}
+              >
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>No files found. Please upload an Excel file.</p>
+      )}
 
       {sheets.length > 0 && (
         <>
