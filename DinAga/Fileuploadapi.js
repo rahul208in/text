@@ -9,24 +9,24 @@ export const config = {
   },
 };
 
-const uploadDir = path.join(process.cwd(), 'public/uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+export async function POST(req) {
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-export default async function handler(req) {
-  if (req.method === 'POST') {
-    const form = new formidable.IncomingForm();
-    form.uploadDir = uploadDir;
-    form.keepExtensions = true;
+  const form = new formidable.IncomingForm();
+  form.uploadDir = uploadDir;
+  form.keepExtensions = true;
 
-    return new Promise((resolve, reject) => {
-      form.parse(req, (err, fields, files) => {
-        if (err) reject({ error: 'File upload error' });
-        const filePath = files.file.path;
-        const fileName = path.basename(filePath);
-        resolve(new Response(JSON.stringify({ fileName }), { status: 200 }));
-      });
+  return new Promise((resolve, reject) => {
+    form.parse(req, (err, fields, files) => {
+      if (err) {
+        console.error('File upload error:', err);
+        reject(new Response(JSON.stringify({ error: 'File upload error' }), { status: 500 }));
+      }
+      
+      const filePath = files.file.filepath;
+      const fileName = path.basename(filePath);
+      resolve(new Response(JSON.stringify({ fileName }), { status: 200 }));
     });
-  } else {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
-  }
+  });
 }
