@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import Upload from '../components/Upload';
 
@@ -7,6 +6,7 @@ const Home = () => {
   const [excelFiles, setExcelFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedSheet, setSelectedSheet] = useState(null);
+  const [filteredRows, setFilteredRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
 
   const handleFilesUploaded = (files) => {
@@ -21,6 +21,21 @@ const Home = () => {
 
   const handleSheetSelect = (sheetName) => {
     setSelectedSheet(sheetName);
+    const sheetData = selectedFile.data[sheetName];
+
+    // Identify index of the "hello" column (if exists)
+    const headerRow = sheetData[0];
+    const helloColumnIndex = headerRow.findIndex(
+      (header) => typeof header === 'string' && header.toLowerCase() === 'hello'
+    );
+
+    if (helloColumnIndex !== -1) {
+      // Filter rows that contain data under "hello" column
+      const rows = sheetData.slice(1).filter((row) => row[helloColumnIndex]);
+      setFilteredRows(rows);
+    } else {
+      setFilteredRows([]);
+    }
     setSelectedRow(null);
   };
 
@@ -82,25 +97,24 @@ const Home = () => {
           <>
             <h4>Rows with "hello" in {selectedSheet}:</h4>
             <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-              {selectedFile.data[selectedSheet]
-                .filter((row) => typeof row[0] === 'string' && row[0].toLowerCase() === 'hello')
-                .map((row, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleRowSelect(row)}
-                    style={{
-                      width: 'calc(50% - 10px)',
-                      padding: '15px',
-                      margin: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      backgroundColor: '#f1f8e9',
-                    }}
-                  >
-                    <strong>{row[0]}</strong>
-                  </div>
-                ))}
+              {filteredRows.map((row, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => handleRowSelect(row)}
+                  style={{
+                    width: 'calc(50% - 10px)',
+                    padding: '15px',
+                    margin: '10px',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    backgroundColor: '#f1f8e9',
+                  }}
+                >
+                  <strong>{row[0]}</strong>
+                </div>
+              ))}
+              {filteredRows.length === 0 && <p>No rows found under "hello" header in {selectedSheet}</p>}
             </div>
           </>
         )}
@@ -112,7 +126,7 @@ const Home = () => {
           <div style={{ marginTop: '20px' }}>
             <h3>Details for: {selectedRow[0]}</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '8px' }}>
-              {selectedRow.slice(1).map((cell, idx) => (
+              {selectedRow.map((cell, idx) => (
                 <div
                   key={idx}
                   style={{
@@ -125,7 +139,7 @@ const Home = () => {
                     boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
                   }}
                 >
-                  <strong>Column {idx + 2}:</strong> {cell}
+                  <strong>Column {idx + 1}:</strong> {cell}
                 </div>
               ))}
             </div>
