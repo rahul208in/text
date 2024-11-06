@@ -1,52 +1,58 @@
 
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { useFiles } from '../../context/FileContext';
 import { useRouter } from 'next/navigation';
 
 const UploadPage = () => {
-  const { files, addFile, deleteFile } = useFiles();
+  const [files, setFiles] = useState([]);
+  const [sheets, setSheets] = useState([]);
   const [headers, setHeaders] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedSheet, setSelectedSheet] = useState(null);
   const router = useRouter();
 
-  const handleFileUpload = (e) => {
+  const fetchFiles = async () => {
+    const res = await fetch('/api/files/list');
+    const data = await res.json();
+    setFiles(data);
+  };
+
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const data = new Uint8Array(event.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheetsData = {};
-
-      workbook.SheetNames.forEach((sheetName) => {
-        const sheet = workbook.Sheets[sheetName];
-        sheetsData[sheetName] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      });
-
-      addFile({ name: file.name, data: sheetsData });
-      setSelectedFile({ name: file.name, data: sheetsData });
-
-      // Assuming the headers are in the first sheet’s first row
-      const headers = sheetsData[workbook.SheetNames[0]][0];
-      setHeaders(headers);
-    };
-    reader.readAsArrayBuffer(file);
+    await fetch('/api/files/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    fetchFiles();
   };
 
-  const handleDelete = (fileName) => {
-    deleteFile(fileName);
-    if (selectedFile?.name === fileName) {
-      setSelectedFile(null);
-      setHeaders([]);
-    }
+  const handleFileSelect = async (fileName) => {
+    const res = await fetch(`/uploads/${fileName}`);
+    const data = await res.arrayBuffer();
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheetNames = workbook.SheetNames;
+    setSheets(sheetNames);
+    setSelectedFile({ name: fileName, workbook });
   };
 
-  const handleGoToHomePage = () => {
-    router.push('/');
+  const handleSheetSelect = (sheetName) => {
+    const sheet = selectedFile.workbook.Sheets[sheetName];
+    const sheetData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    setHeaders(sheetData[0]); // First row as headers
+    setSelectedSheet(sheetName);
   };
+
+  const handleHeaderSelect = (header) => {
+    router.push(`/view?file=${selectedFile.name}&sheet=${selectedSheet}&header=${header}`);
+  };
+
+  useEffect(() => {
+    fetchFiles();
+  }, []);
 
   return (
     <div style={{ padding: '20px' }}>
@@ -61,23 +67,43 @@ const UploadPage = () => {
       <ul>
         {files.map((file, idx) => (
           <li key={idx} style={{ marginBottom: '10px' }}>
-            {file.name}
-            <button onClick={() => handleDelete(file.name)} style={{ marginLeft: '10px', color: 'red' }}>
+            {file}
+            <button onClick={() => handleFileSelect(file)} style={{ marginLeft: '10px' }}>
+              Select
+            </button>
+            <button
+              onClick={async () => {
+                await fetch(`/api/files/delete?fileName=${file}`, { method: 'DELETE' });
+                fetchFiles();
+              }}
+              style={{ marginLeft: '10px', color: 'red' }}
+            >
               Delete
             </button>
           </li>
         ))}
       </ul>
-      <button onClick={handleGoToHomePage} style={{ marginTop: '20px', padding: '10px' }}>
-        Go to Home Page
-      </button>
-      {selectedFile && (
+
+      {sheets.length > 0 && (
+        <>
+          <h3>Select Sheet</h3>
+          <ul>
+            {sheets.map((sheet, idx) => (
+              <li key={idx} style={{ cursor: 'pointer', margin: '5px 0' }}>
+                <button onClick={() => handleSheetSelect(sheet)}>{sheet}</button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {headers.length > 0 && (
         <>
           <h3>Select Header for Navigation Panel</h3>
           <ul>
             {headers.map((header, idx) => (
               <li key={idx} style={{ cursor: 'pointer', margin: '5px 0' }}>
-                <button onClick={() => router.push(`/view?file=${selectedFile.name}&header=${header}`)}>
+                <button onClick={() => handleHeaderSelect(header)}>
                   Use "{header}" as Header
                 </button>
               </li>
