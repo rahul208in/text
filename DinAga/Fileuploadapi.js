@@ -1,7 +1,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import formidable from 'formidable';
+
+// Use require to import formidable to avoid Webpack issues
+const formidable = require('formidable');
 
 export const config = {
   api: {
@@ -13,9 +15,10 @@ export async function POST(req) {
   const uploadDir = path.join(process.cwd(), 'public/uploads');
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-  const form = new formidable.IncomingForm();
-  form.uploadDir = uploadDir;
-  form.keepExtensions = true;
+  const form = formidable({
+    uploadDir: uploadDir,
+    keepExtensions: true,
+  });
 
   return new Promise((resolve, reject) => {
     form.parse(req, (err, fields, files) => {
