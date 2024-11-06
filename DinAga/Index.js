@@ -1,7 +1,7 @@
 
 
 import React, { useState } from 'react';
-import Upload from './upload';
+import Upload from '../components/Upload';
 
 const Home = () => {
   const [excelFiles, setExcelFiles] = useState([]);
@@ -77,16 +77,13 @@ const Home = () => {
             </ul>
           </>
         )}
-      </div>
 
-      {/* Right Panel for Data Display */}
-      <div style={{ width: '70%', padding: '20px', backgroundColor: '#ffffff', borderRadius: '8px' }}>
         {selectedSheet && (
-          <div>
-            <h3>Data from Sheet: {selectedSheet}</h3>
+          <>
+            <h4>Rows with "hello" in {selectedSheet}:</h4>
             <div style={{ display: 'flex', flexWrap: 'wrap' }}>
               {selectedFile.data[selectedSheet]
-                .filter((row) => row[0]?.toLowerCase() === 'hello')
+                .filter((row) => typeof row[0] === 'string' && row[0].toLowerCase() === 'hello')
                 .map((row, idx) => (
                   <div
                     key={idx}
@@ -105,9 +102,12 @@ const Home = () => {
                   </div>
                 ))}
             </div>
-          </div>
+          </>
         )}
+      </div>
 
+      {/* Right Panel for Data Display */}
+      <div style={{ width: '70%', padding: '20px', backgroundColor: '#ffffff', borderRadius: '8px' }}>
         {selectedRow && (
           <div style={{ marginTop: '20px' }}>
             <h3>Details for: {selectedRow[0]}</h3>
