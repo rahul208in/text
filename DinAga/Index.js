@@ -6,6 +6,7 @@ const Home = () => {
   const [excelFiles, setExcelFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedSheet, setSelectedSheet] = useState(null);
+  const [headers, setHeaders] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
 
@@ -17,20 +18,25 @@ const Home = () => {
     setSelectedFile(file);
     setSelectedSheet(null);
     setSelectedRow(null);
+    setHeaders([]);
+    setFilteredRows([]);
   };
 
   const handleSheetSelect = (sheetName) => {
     setSelectedSheet(sheetName);
     const sheetData = selectedFile.data[sheetName];
 
-    // Identify index of the "hello" column (if exists)
+    // Get headers from the first row of the sheet
     const headerRow = sheetData[0];
+    setHeaders(headerRow);
+
+    // Identify index of the "hello" column (if exists)
     const helloColumnIndex = headerRow.findIndex(
       (header) => typeof header === 'string' && header.toLowerCase() === 'hello'
     );
 
     if (helloColumnIndex !== -1) {
-      // Filter rows that contain data under "hello" column
+      // Filter rows that contain data under the "hello" column
       const rows = sheetData.slice(1).filter((row) => row[helloColumnIndex]);
       setFilteredRows(rows);
     } else {
@@ -139,7 +145,7 @@ const Home = () => {
                     boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
                   }}
                 >
-                  <strong>Column {idx + 1}:</strong> {cell}
+                  <strong>{headers[idx] || `Column ${idx + 1}`}:</strong> {cell}
                 </div>
               ))}
             </div>
