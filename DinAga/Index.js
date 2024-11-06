@@ -31,12 +31,24 @@ const Home = () => {
   return (
     <div style={{ display: 'flex', padding: '20px' }}>
       {/* Left Panel for File and Sheet Selection */}
-      <div style={{ width: '20%', borderRight: '1px solid #ddd', padding: '10px' }}>
+      <div style={{ width: '30%', padding: '20px', backgroundColor: '#f9f9f9', borderRadius: '8px', marginRight: '20px' }}>
         <h3>Excel Files</h3>
         <Upload onFilesUploaded={handleFilesUploaded} />
-        <ul>
+        <h4>Uploaded Files:</h4>
+        <ul style={{ padding: '0', listStyle: 'none' }}>
           {excelFiles.map((file, idx) => (
-            <li key={idx} onClick={() => handleFileSelect(file)} style={{ cursor: 'pointer', margin: '10px 0' }}>
+            <li
+              key={idx}
+              onClick={() => handleFileSelect(file)}
+              style={{
+                cursor: 'pointer',
+                padding: '10px',
+                margin: '5px 0',
+                backgroundColor: selectedFile === file ? '#e0f7fa' : '#fff',
+                borderRadius: '5px',
+                border: '1px solid #ddd',
+              }}
+            >
               {file.name}
             </li>
           ))}
@@ -44,10 +56,21 @@ const Home = () => {
 
         {selectedFile && (
           <>
-            <h3>Sheets in {selectedFile.name}</h3>
-            <ul>
+            <h4>Sheets in {selectedFile.name}:</h4>
+            <ul style={{ padding: '0', listStyle: 'none' }}>
               {Object.keys(selectedFile.data).map((sheetName) => (
-                <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={{ cursor: 'pointer', margin: '10px 0' }}>
+                <li
+                  key={sheetName}
+                  onClick={() => handleSheetSelect(sheetName)}
+                  style={{
+                    cursor: 'pointer',
+                    padding: '10px',
+                    margin: '5px 0',
+                    backgroundColor: selectedSheet === sheetName ? '#e8f5e9' : '#fff',
+                    borderRadius: '5px',
+                    border: '1px solid #ddd',
+                  }}
+                >
                   {sheetName}
                 </li>
               ))}
@@ -57,10 +80,10 @@ const Home = () => {
       </div>
 
       {/* Right Panel for Data Display */}
-      <div style={{ width: '80%', padding: '10px' }}>
+      <div style={{ width: '70%', padding: '20px', backgroundColor: '#ffffff', borderRadius: '8px' }}>
         {selectedSheet && (
           <div>
-            <h3>Data from {selectedSheet}</h3>
+            <h3>Data from Sheet: {selectedSheet}</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap' }}>
               {selectedFile.data[selectedSheet]
                 .filter((row) => row[0]?.toLowerCase() === 'hello')
@@ -70,14 +93,15 @@ const Home = () => {
                     onClick={() => handleRowSelect(row)}
                     style={{
                       width: 'calc(50% - 10px)',
-                      padding: '10px',
-                      margin: '5px',
+                      padding: '15px',
+                      margin: '10px',
                       border: '1px solid #ddd',
-                      borderRadius: '5px',
+                      borderRadius: '8px',
                       cursor: 'pointer',
+                      backgroundColor: '#f1f8e9',
                     }}
                   >
-                    {row[0]}
+                    <strong>{row[0]}</strong>
                   </div>
                 ))}
             </div>
@@ -86,11 +110,22 @@ const Home = () => {
 
         {selectedRow && (
           <div style={{ marginTop: '20px' }}>
-            <h3>Details for {selectedRow[0]}</h3>
-            <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-              {selectedRow.map((cell, idx) => (
-                <div key={idx} style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '5px', margin: '5px' }}>
-                  <strong>Column {idx + 1}:</strong> {cell}
+            <h3>Details for: {selectedRow[0]}</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '8px' }}>
+              {selectedRow.slice(1).map((cell, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    flex: '1 1 30%',
+                    padding: '10px',
+                    margin: '10px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #ddd',
+                    borderRadius: '5px',
+                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                  }}
+                >
+                  <strong>Column {idx + 2}:</strong> {cell}
                 </div>
               ))}
             </div>
