@@ -1,0 +1,18 @@
+
+import fs from 'fs';
+import path from 'path';
+
+export default function handler(req, res) {
+  if (req.method === 'DELETE') {
+    const { fileName } = req.query;
+    const filePath = path.join(process.cwd(), '/public/uploads', fileName);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      res.status(200).json({ message: 'File deleted' });
+    } else {
+      res.status(404).json({ error: 'File not found' });
+    }
+  } else {
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+}
