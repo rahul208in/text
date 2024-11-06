@@ -2,10 +2,10 @@
 import fs from 'fs';
 import path from 'path';
 
-export default function handler() {
+export async function GET() {
   try {
     const uploadDir = path.join(process.cwd(), 'public/uploads');
-    
+
     // Log to confirm if the directory exists or is being accessed
     console.log('Accessing /api/files/list route');
 
@@ -26,8 +26,4 @@ export default function handler() {
     // Return an empty array in case of error with status 500
     return new Response(JSON.stringify([]), { status: 500 });
   }
-}
-
-export default function handler() {
-  return new Response(JSON.stringify(["test-file.xlsx", "sample-file.xls"]), { status: 200 });
 }
