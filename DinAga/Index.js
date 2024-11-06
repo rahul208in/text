@@ -1,14 +1,22 @@
 
+
 import React, { useState } from 'react';
-import ExcelReader from '../components/ExcelReader';
+import Upload from './upload';
 
 const Home = () => {
-  const [sheetsData, setSheetsData] = useState({});
+  const [excelFiles, setExcelFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [selectedSheet, setSelectedSheet] = useState(null);
   const [selectedRow, setSelectedRow] = useState(null);
 
-  const handleFileLoad = (data) => {
-    setSheetsData(data);
+  const handleFilesUploaded = (files) => {
+    setExcelFiles(files);
+  };
+
+  const handleFileSelect = (file) => {
+    setSelectedFile(file);
+    setSelectedSheet(null);
+    setSelectedRow(null);
   };
 
   const handleSheetSelect = (sheetName) => {
@@ -22,26 +30,39 @@ const Home = () => {
 
   return (
     <div style={{ display: 'flex', padding: '20px' }}>
-      {/* Left Navigation Panel */}
+      {/* Left Panel for File and Sheet Selection */}
       <div style={{ width: '20%', borderRight: '1px solid #ddd', padding: '10px' }}>
-        <h3>Sheets</h3>
-        <ExcelReader onFileLoad={handleFileLoad} />
+        <h3>Excel Files</h3>
+        <Upload onFilesUploaded={handleFilesUploaded} />
         <ul>
-          {Object.keys(sheetsData).map((sheetName) => (
-            <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={{ cursor: 'pointer', margin: '10px 0' }}>
-              {sheetName}
+          {excelFiles.map((file, idx) => (
+            <li key={idx} onClick={() => handleFileSelect(file)} style={{ cursor: 'pointer', margin: '10px 0' }}>
+              {file.name}
             </li>
           ))}
         </ul>
+
+        {selectedFile && (
+          <>
+            <h3>Sheets in {selectedFile.name}</h3>
+            <ul>
+              {Object.keys(selectedFile.data).map((sheetName) => (
+                <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={{ cursor: 'pointer', margin: '10px 0' }}>
+                  {sheetName}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
-      {/* Right Panel */}
+      {/* Right Panel for Data Display */}
       <div style={{ width: '80%', padding: '10px' }}>
         {selectedSheet && (
           <div>
             <h3>Data from {selectedSheet}</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-              {sheetsData[selectedSheet]
+              {selectedFile.data[selectedSheet]
                 .filter((row) => row[0]?.toLowerCase() === 'hello')
                 .map((row, idx) => (
                   <div
@@ -66,26 +87,13 @@ const Home = () => {
         {selectedRow && (
           <div style={{ marginTop: '20px' }}>
             <h3>Details for {selectedRow[0]}</h3>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  {selectedRow.map((header, idx) => (
-                    <th key={idx} style={{ border: '1px solid #ddd', padding: '8px', backgroundColor: '#f5f5f5' }}>
-                      Column {idx + 1}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {selectedRow.map((cell, idx) => (
-                    <td key={idx} style={{ border: '1px solid #ddd', padding: '8px' }}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+            <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+              {selectedRow.map((cell, idx) => (
+                <div key={idx} style={{ padding: '8px', border: '1px solid #ddd', borderRadius: '5px', margin: '5px' }}>
+                  <strong>Column {idx + 1}:</strong> {cell}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
