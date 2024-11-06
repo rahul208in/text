@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 
@@ -33,14 +34,24 @@ const Upload = ({ onFilesUploaded }) => {
   };
 
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: '20px', border: '1px solid #ddd', borderRadius: '8px', marginBottom: '20px' }}>
       <h2>Upload Excel Files</h2>
-      <input type="file" multiple accept=".xlsx, .xls" onChange={handleFileUpload} />
-      <ul>
-        {excelFiles.map((file, idx) => (
-          <li key={idx}>{file.name}</li>
-        ))}
-      </ul>
+      <input
+        type="file"
+        multiple
+        accept=".xlsx, .xls"
+        onChange={handleFileUpload}
+        style={{ marginBottom: '10px', padding: '8px', cursor: 'pointer' }}
+      />
+      <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+        <ul style={{ listStyle: 'none', padding: 0 }}>
+          {excelFiles.map((file, idx) => (
+            <li key={idx} style={{ padding: '5px 0' }}>
+              <strong>{file.name}</strong> uploaded successfully.
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 };
