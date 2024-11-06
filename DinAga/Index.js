@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import Upload from '../components/Upload';
 
@@ -6,8 +7,9 @@ const Home = () => {
   const [excelFiles, setExcelFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedSheet, setSelectedSheet] = useState(null);
-  const [headers, setHeaders] = useState([]);
+  const [helloColumnIndex, setHelloColumnIndex] = useState(null);
   const [filteredRows, setFilteredRows] = useState([]);
+  const [headers, setHeaders] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
 
   const handleFilesUploaded = (files) => {
@@ -18,8 +20,9 @@ const Home = () => {
     setSelectedFile(file);
     setSelectedSheet(null);
     setSelectedRow(null);
-    setHeaders([]);
+    setHelloColumnIndex(null);
     setFilteredRows([]);
+    setHeaders([]);
   };
 
   const handleSheetSelect = (sheetName) => {
@@ -30,14 +33,15 @@ const Home = () => {
     const headerRow = sheetData[0];
     setHeaders(headerRow);
 
-    // Identify index of the "hello" column (if exists)
-    const helloColumnIndex = headerRow.findIndex(
+    // Identify the index of the "hello" column
+    const helloIndex = headerRow.findIndex(
       (header) => typeof header === 'string' && header.toLowerCase() === 'hello'
     );
+    setHelloColumnIndex(helloIndex);
 
-    if (helloColumnIndex !== -1) {
-      // Filter rows that contain data under the "hello" column
-      const rows = sheetData.slice(1).filter((row) => row[helloColumnIndex]);
+    if (helloIndex !== -1) {
+      // Filter rows that contain data in the "hello" column
+      const rows = sheetData.slice(1).filter((row) => row[helloIndex]);
       setFilteredRows(rows);
     } else {
       setFilteredRows([]);
@@ -101,23 +105,23 @@ const Home = () => {
 
         {selectedSheet && (
           <>
-            <h4>Rows with "hello" in {selectedSheet}:</h4>
+            <h4>Rows under "hello" in {selectedSheet}:</h4>
             <div style={{ display: 'flex', flexWrap: 'wrap' }}>
               {filteredRows.map((row, idx) => (
                 <div
                   key={idx}
                   onClick={() => handleRowSelect(row)}
                   style={{
-                    width: 'calc(50% - 10px)',
+                    width: 'calc(100% - 10px)',
                     padding: '15px',
-                    margin: '10px',
+                    margin: '10px 0',
                     border: '1px solid #ddd',
                     borderRadius: '8px',
                     cursor: 'pointer',
                     backgroundColor: '#f1f8e9',
                   }}
                 >
-                  <strong>{row[0]}</strong>
+                  <strong>{row[helloColumnIndex]}</strong>
                 </div>
               ))}
               {filteredRows.length === 0 && <p>No rows found under "hello" header in {selectedSheet}</p>}
@@ -130,24 +134,28 @@ const Home = () => {
       <div style={{ width: '70%', padding: '20px', backgroundColor: '#ffffff', borderRadius: '8px' }}>
         {selectedRow && (
           <div style={{ marginTop: '20px' }}>
-            <h3>Details for: {selectedRow[0]}</h3>
+            <h3>Details for: {selectedRow[helloColumnIndex]}</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '8px' }}>
-              {selectedRow.map((cell, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    flex: '1 1 30%',
-                    padding: '10px',
-                    margin: '10px',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #ddd',
-                    borderRadius: '5px',
-                    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                  }}
-                >
-                  <strong>{headers[idx] || `Column ${idx + 1}`}:</strong> {cell}
-                </div>
-              ))}
+              {selectedRow.map((cell, idx) => {
+                // Exclude the "hello" column from display
+                if (idx === helloColumnIndex) return null;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      flex: '1 1 30%',
+                      padding: '10px',
+                      margin: '10px',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #ddd',
+                      borderRadius: '5px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                    }}
+                  >
+                    <strong>{headers[idx] || `Column ${idx + 1}`}:</strong> {cell}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
