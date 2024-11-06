@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState } from 'react';
@@ -9,6 +10,7 @@ export default function Home() {
   const [param2, setParam2] = useState('');
   const [csvData, setCsvData] = useState('');
   const [csvLink, setCsvLink] = useState(null);
+  const [expandedRow, setExpandedRow] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,13 +44,17 @@ export default function Home() {
     }
   };
 
+  const toggleRow = (index) => {
+    setExpandedRow(expandedRow === index ? null : index);
+  };
+
   const renderCsvTable = () => {
     const rows = csvData.split('\n').filter(row => row.trim() !== '');
     const headers = rows[0].split(',');
     const dataRows = rows.slice(1);
 
     return (
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <thead>
           <tr>
             {headers.map((header, index) => (
@@ -59,15 +65,34 @@ export default function Home() {
           </tr>
         </thead>
         <tbody>
-          {dataRows.map((row, rowIndex) => (
-            <tr key={rowIndex}>
-              {row.split(',').map((cell, cellIndex) => (
-                <td key={cellIndex} style={{ border: '1px solid #ddd', padding: '8px' }}>
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {dataRows.map((row, rowIndex) => {
+            const cells = row.split(',');
+            return (
+              <tr
+                key={rowIndex}
+                onClick={() => toggleRow(rowIndex)}
+                style={{
+                  cursor: 'pointer',
+                  backgroundColor: expandedRow === rowIndex ? '#eef2ff' : 'white',
+                }}
+              >
+                {cells.map((cell, cellIndex) => (
+                  <td
+                    key={cellIndex}
+                    style={{
+                      border: '1px solid #ddd',
+                      padding: '8px',
+                      overflow: 'hidden',
+                      whiteSpace: expandedRow === rowIndex ? 'normal' : 'nowrap',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {expandedRow === rowIndex ? cell : cell.slice(0, 20) + (cell.length > 20 ? '...' : '')}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     );
