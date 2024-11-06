@@ -1,7 +1,9 @@
 
-import React, { useState } from 'react';
+
+// app/page.js
+import React from 'react';
 import { useFiles } from '../context/FileContext';
-import { useRouter } from 'next/router';
+import { useRouter } from 'next/navigation';
 
 const LandingPage = () => {
   const { files } = useFiles();
