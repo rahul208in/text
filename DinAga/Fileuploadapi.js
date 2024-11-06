@@ -10,6 +10,11 @@ export const config = {
 };
 
 export default function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method Not Allowed' });
+    return;
+  }
+
   const uploadDir = path.join(process.cwd(), 'public/uploads');
   if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
