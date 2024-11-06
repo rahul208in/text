@@ -27,3 +27,7 @@ export default function handler() {
     return new Response(JSON.stringify([]), { status: 500 });
   }
 }
+
+export default function handler() {
+  return new Response(JSON.stringify(["test-file.xlsx", "sample-file.xls"]), { status: 200 });
+}
