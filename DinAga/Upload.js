@@ -1,5 +1,4 @@
 
-
 "use client";
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
@@ -14,9 +13,21 @@ const UploadPage = () => {
   const router = useRouter();
 
   const fetchFiles = async () => {
-    const res = await fetch('/api/files/list');
-    const data = await res.json();
-    setFiles(data);
+    try {
+      const res = await fetch('/api/files/list');
+      if (!res.ok) {
+        // If response is not ok, handle the error gracefully
+        console.error('Failed to fetch files');
+        setFiles([]);
+        return;
+      }
+      
+      const data = await res.json();
+      setFiles(data);
+    } catch (error) {
+      console.error('Error parsing JSON:', error);
+      setFiles([]);
+    }
   };
 
   const handleFileUpload = async (e) => {
