@@ -1,5 +1,4 @@
-// app/layout.js
-import './globals.css';
+
 import { FileProvider } from '../context/FileContext';
 
 export default function RootLayout({ children }) {
