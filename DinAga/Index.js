@@ -1,6 +1,5 @@
 
-
-// app/page.js
+"use client";
 import React from 'react';
 import { useFiles } from '../context/FileContext';
 import { useRouter } from 'next/navigation';
