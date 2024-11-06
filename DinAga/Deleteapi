@@ -2,19 +2,20 @@
 import fs from 'fs';
 import path from 'path';
 
-export default function handler(req) {
-  if (req.method === 'DELETE') {
-    const { searchParams } = new URL(req.url);
-    const fileName = searchParams.get('fileName');
-    const filePath = path.join(process.cwd(), 'public/uploads', fileName);
+export async function DELETE(req) {
+  const { searchParams } = new URL(req.url);
+  const fileName = searchParams.get('fileName');
+  const filePath = path.join(process.cwd(), 'public/uploads', fileName);
 
+  try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       return new Response(JSON.stringify({ message: 'File deleted' }), { status: 200 });
     } else {
       return new Response(JSON.stringify({ error: 'File not found' }), { status: 404 });
     }
-  } else {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    return new Response(JSON.stringify({ error: 'Error deleting file' }), { status: 500 });
   }
 }
