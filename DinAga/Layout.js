@@ -1,5 +1,5 @@
 
-import { FileProvider } from '../context/FileContext';
+import { FileProvider } from './context/FileContext';
 
 export default function RootLayout({ children }) {
   return (
