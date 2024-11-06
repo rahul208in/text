@@ -33,13 +33,67 @@ const DataViewPage = () => {
     }
   }, [fileName, header, files]);
 
+  const handleRowSelect = (row) => {
+    setSelectedRow(row);
+  };
+
   if (!selectedFile || headerIndex === null) return <p>Loading data...</p>;
 
   return (
     <div style={{ display: 'flex', padding: '20px' }}>
-      {/* Left Panel */}
+      {/* Left Panel - Records from Selected Header */}
       <div style={{ width: '30%', padding: '20px', backgroundColor: '#f9f9f9', borderRadius: '8px', marginRight: '20px' }}>
         <h3>Records for "{header}"</h3>
         {filteredRows.map((row, idx) => (
           <div
-            key={idx
+            key={idx}
+            onClick={() => handleRowSelect(row)}
+            style={{
+              padding: '15px',
+              margin: '10px 0',
+              border: '1px solid #ddd',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              backgroundColor: '#f1f8e9',
+            }}
+          >
+            {row[headerIndex]}
+          </div>
+        ))}
+        {filteredRows.length === 0 && <p>No records found under "{header}"</p>}
+      </div>
+
+      {/* Right Panel - Selected Row Details */}
+      <div style={{ width: '70%', padding: '20px', backgroundColor: '#ffffff', borderRadius: '8px' }}>
+        {selectedRow && (
+          <div style={{ marginTop: '20px' }}>
+            <h3>Details for: {selectedRow[headerIndex]}</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '8px' }}>
+              {selectedRow.map((cell, idx) => {
+                if (idx === headerIndex) return null; // Exclude the selected header column
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      flex: '1 1 30%',
+                      padding: '10px',
+                      margin: '10px',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #ddd',
+                      borderRadius: '5px',
+                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                    }}
+                  >
+                    <strong>{selectedFile.data[Object.keys(selectedFile.data)[0]][0][idx] || `Column ${idx + 1}`}:</strong> {cell}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default DataViewPage;
