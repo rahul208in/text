@@ -13,7 +13,7 @@ export default function MainPage() {
     const [selectedSheet, setSelectedSheet] = useState(null);
     const [selectedHeader, setSelectedHeader] = useState(null);
     const [selectedRow, setSelectedRow] = useState(null);
-    const [isHelpOpen, setIsHelpOpen] = useState(false); // Help modal state
+    const [isHelpOpen, setIsHelpOpen] = useState(false); // State to control Help modal
 
     useEffect(() => {
         const fetchFiles = async () => {
