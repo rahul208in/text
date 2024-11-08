@@ -10,7 +10,7 @@ export default function MainPage() {
     useEffect(() => {
         const fetchFiles = async () => {
             try {
-                const res = await fetch('http://localhost:3001/api/files/list'); // Use the full URL with port
+                const res = await fetch('http://localhost:3001/api/files/list'); // Adjust the port if necessary
                 console.log('Fetch response status:', res.status); // Log response status for debugging
 
                 if (!res.ok) {
@@ -21,7 +21,15 @@ export default function MainPage() {
 
                 const data = await res.json();
                 console.log('Fetched files:', data.files); // Log fetched files
-                setFiles(data.files || []); // Set files to an empty array if undefined
+                
+                // Confirm the files array is being set correctly
+                if (data.files && data.files.length > 0) {
+                    console.log("Setting files state with data:", data.files);
+                    setFiles(data.files);
+                } else {
+                    console.warn("No files found in response data:", data.files);
+                    setFiles([]);
+                }
             } catch (error) {
                 console.error('Error fetching files:', error);
             } finally {
