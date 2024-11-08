@@ -1,42 +1,39 @@
 
+import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import Busboy from 'busboy';
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
 
 export async function POST(req) {
-  return new Promise((resolve, reject) => {
     try {
-      const uploadDir = path.join(process.cwd(), 'public/uploads');
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+        // Parse the FormData from the request
+        const formData = await req.formData();
+        const file = formData.get('file');
 
-      const busboy = new Busboy({ headers: req.headers });
-      const filePaths = [];
+        // Check if file is provided
+        if (!file) {
+            return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+        }
 
-      busboy.on('file', (fieldname, file, filename) => {
-        const saveTo = path.join(uploadDir, filename);
-        file.pipe(fs.createWriteStream(saveTo));
-        filePaths.push(saveTo);
-      });
+        // Convert Blob to Buffer
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-      busboy.on('finish', () => {
-        resolve(new Response(JSON.stringify({ filePaths }), { status: 200 }));
-      });
+        // Define the file path where the file will be saved
+        const uploadsDir = path.join(process.cwd(), 'public/uploads');
+        const filePath = path.join(uploadsDir, file.name);
 
-      busboy.on('error', (error) => {
-        console.error('File upload error:', error);
-        reject(new Response(JSON.stringify({ error: 'File upload error' }), { status: 500 }));
-      });
+        // Ensure the uploads directory exists
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
 
-      req.pipe(busboy);
+        // Write the file to the server
+        fs.writeFileSync(filePath, buffer);
+
+        // Return a success response
+        return NextResponse.json({ message: 'File uploaded successfully' }, { status: 200 });
     } catch (error) {
-      console.error('Unexpected error:', error);
-      reject(new Response(JSON.stringify({ error: 'Unexpected error' }), { status: 500 }));
+        console.error('File upload error:', error);
+        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
     }
-  });
 }
