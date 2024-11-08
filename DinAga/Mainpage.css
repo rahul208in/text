@@ -1,44 +1,15 @@
-/* General Container */
-.container {
+
+/* Top Buttons Container */
+.topButtons {
     display: flex;
-    flex-direction: column;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    height: 100vh;
-    background-color: #f4f6f9;
-}
-
-/* Main Content Layout */
-.mainContent {
-    display: flex;
-    height: calc(100vh - 60px);
-}
-
-/* Navigation Panel */
-.navPanel {
-    width: 25%;
-    border-right: 1px solid #ddd;
-    padding: 20px;
-    background-color: #f8f9fa;
-    overflow-y: auto;
-    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
-}
-
-/* Main Panel */
-.mainPanel {
-    width: 75%;
-    padding: 20px;
-    overflow-y: auto;
-    background-color: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* Upload Button */
-.uploadButton {
-    align-self: flex-start;
+    gap: 10px;
     margin: 10px 20px;
+}
+
+/* Help Button */
+.helpButton {
     padding: 10px 20px;
-    background-color: #5cb85c;
+    background-color: #007bff;
     color: #fff;
     border: none;
     border-radius: 8px;
@@ -48,119 +19,63 @@
     transition: background-color 0.3s ease;
 }
 
-.uploadButton:hover {
-    background-color: #4cae4c;
+.helpButton:hover {
+    background-color: #0056b3;
 }
 
-/* Lists in Navigation Panel */
-.list {
-    list-style-type: none;
-    padding: 0;
-    margin-top: 10px;
+/* Modal Overlay */
+.modalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
 }
 
-.listItem {
-    padding: 10px 15px;
-    margin-bottom: 6px;
-    cursor: pointer;
-    border-radius: 6px;
-    background-color: #e9ecef;
+/* Modal Content */
+.modalContent {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    width: 80%;
+    max-width: 500px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    text-align: left;
+    font-size: 16px;
+}
+
+.modalContent h2 {
+    margin-top: 0;
     color: #333;
-    transition: background-color 0.2s ease;
-    font-weight: 500;
 }
 
-.listItem:hover {
-    background-color: #cdd4db;
+.modalContent ul {
+    list-style-type: disc;
+    padding-left: 20px;
+    color: #555;
 }
 
-/* Back Button */
-.backButton {
-    display: inline-block;
-    margin-bottom: 15px;
-    padding: 10px 15px;
+.modalContent ul li {
+    margin-bottom: 10px;
+}
+
+/* Close Button */
+.closeButton {
+    margin-top: 20px;
+    padding: 8px 12px;
     background-color: #007bff;
     color: #fff;
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    font-weight: bold;
-    transition: background-color 0.3s ease;
-}
-
-.backButton:hover {
-    background-color: #0056b3;
-}
-
-/* Section Headers */
-.sectionContainer {
-    margin-bottom: 15px;
-    padding: 12px;
-    border-radius: 8px;
-    background-color: #f1f3f5;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.sectionHeader {
-    cursor: pointer;
-    font-weight: bold;
-    margin-top: 10px;
-    color: #495057;
-    padding: 8px 12px;
-    background-color: #e0e7ff;
-    border-radius: 6px;
-    font-size: 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-/* Card Container for Pallets */
-.cardContainer {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-/* Individual Cards (Pallets) */
-.card {
-    width: 160px;
-    padding: 12px;
-    border-radius: 10px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    background-color: #ffffff;
-    text-align: center;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-}
-
-.cardHeader {
-    font-weight: bold;
-    font-size: 16px;
-    color: #4a4a4a;
-    padding: 6px 0;
-    background-color: #f1f3f5;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
-    margin-bottom: 8px;
-}
-
-.cardContent {
     font-size: 14px;
-    color: #495057;
-    padding: 8px;
 }
 
-/* Data Viewer Title */
-.dataViewerTitle {
-    color: #495057;
-    margin-bottom: 20px;
-    font-size: 22px;
-    font-weight: bold;
-    border-bottom: 2px solid #ddd;
-    padding-bottom: 10px;
+.closeButton:hover {
+    background-color: #0056b3;
 }
