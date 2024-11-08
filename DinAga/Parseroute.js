@@ -17,16 +17,21 @@ export async function GET() {
         // Assume the first file is the one to parse (or select based on your criteria)
         const filePath = path.join(uploadsDir, files[0]);
 
-        // Read and parse the XLSX file
-        const workbook = XLSX.readFile(filePath);
+        // Log the file path for debugging
+        console.log('Attempting to read file at:', filePath);
+
+        // Test reading the file with fs to confirm access
+        const fileContents = fs.readFileSync(filePath);
+        console.log('File read successfully with fs:', filePath);
+
+        // Now try parsing with XLSX as a buffer
+        const workbook = XLSX.read(fileContents, { type: 'buffer' });
         const sheetsData = {};
 
-        // Loop through each sheet in the workbook
         workbook.SheetNames.forEach(sheetName => {
             const worksheet = workbook.Sheets[sheetName];
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-            // Extract headers and rows
             const headers = jsonData[0] || [];
             const rows = jsonData.slice(1);
 
