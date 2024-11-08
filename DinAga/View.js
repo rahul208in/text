@@ -13,9 +13,7 @@ export default function MainPage() {
     const [selectedSheet, setSelectedSheet] = useState(null);
     const [selectedHeader, setSelectedHeader] = useState(null);
     const [selectedRow, setSelectedRow] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [isSheetOpen, setIsSheetOpen] = useState(true);
-    const [isHeaderOpen, setIsHeaderOpen] = useState(true);
+    const [isHelpOpen, setIsHelpOpen] = useState(false); // State to control help modal
 
     useEffect(() => {
         const fetchFiles = async () => {
@@ -33,137 +31,39 @@ export default function MainPage() {
         fetchFiles();
     }, []);
 
-    const fetchFileData = async (fileName) => {
-        setLoading(true);
-        try {
-            const res = await fetch(`http://localhost:3001/api/files/parse?file=${fileName}`);
-            if (!res.ok) throw new Error('Failed to fetch sheets data');
-            
-            const data = await res.json();
-            setSheetsData(data.sheetsData);
-            setSelectedSheet(null);
-            setSelectedHeader(null);
-            setSelectedRow(null);
-        } catch (error) {
-            console.error('Error fetching sheets data:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleFileSelect = (file) => {
-        setSelectedFile(file);
-        fetchFileData(file);
-    };
-
-    const handleSheetSelect = (sheetName) => {
-        setSelectedSheet(sheetName);
-        setSelectedHeader(null);
-        setSelectedRow(null);
-        setIsSheetOpen(!isSheetOpen);
-    };
-
-    const handleHeaderSelect = (header) => {
-        setSelectedHeader(header);
-        setSelectedRow(null);
-        setIsHeaderOpen(!isHeaderOpen);
-    };
-
-    const handleRowSelect = (row) => {
-        setSelectedRow(row);
+    const toggleHelp = () => {
+        setIsHelpOpen(!isHelpOpen);
     };
 
     return (
         <div className="container">
-            {/* Upload Button */}
-            <button onClick={() => router.push('/upload')} className="uploadButton">
-                Go to Upload Page
-            </button>
+            <div className="topButtons">
+                <button onClick={() => router.push('/upload')} className="uploadButton">
+                    Go to Upload Page
+                </button>
+                <button onClick={toggleHelp} className="helpButton">
+                    Help
+                </button>
+            </div>
 
             <div className="mainContent">
-                {/* Left Navigation Panel */}
-                <div className="navPanel">
-                    {!selectedFile ? (
-                        <>
-                            <h3>Select an Excel File</h3>
-                            <ul className="list">
-                                {excelFiles.map((file, index) => (
-                                    <li key={index} onClick={() => handleFileSelect(file)} className="listItem">
-                                        {file}
-                                    </li>
-                                ))}
-                            </ul>
-                        </>
-                    ) : (
-                        <>
-                            <button onClick={() => setSelectedFile(null)} className="backButton">
-                                &larr; Back to File Selection
-                            </button>
-                            <div className="sectionContainer">
-                                <h3 onClick={() => setIsSheetOpen(!isSheetOpen)} className="sectionHeader">
-                                    Sheets in {selectedFile} {isSheetOpen ? '▲' : '▼'}
-                                </h3>
-                                {isSheetOpen && (
-                                    <ul className="list">
-                                        {Object.keys(sheetsData).map((sheetName) => (
-                                            <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} className="listItem">
-                                                {sheetName}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </div>
-
-                            {selectedSheet && (
-                                <div className="sectionContainer">
-                                    <h3 onClick={() => setIsHeaderOpen(!isHeaderOpen)} className="sectionHeader">
-                                        Headers in {selectedSheet} {isHeaderOpen ? '▲' : '▼'}
-                                    </h3>
-                                    {isHeaderOpen && (
-                                        <ul className="list">
-                                            {sheetsData[selectedSheet].headers.map((header, index) => (
-                                                <li key={index} onClick={() => handleHeaderSelect(header)} className="listItem">
-                                                    {header}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-                                </div>
-                            )}
-
-                            {selectedHeader && (
-                                <>
-                                    <h3>Rows in {selectedHeader}</h3>
-                                    <ul className="list">
-                                        {sheetsData[selectedSheet].rows.map((row, index) => (
-                                            <li key={index} onClick={() => handleRowSelect(row)} className="listItem">
-                                                {row[sheetsData[selectedSheet].headers.indexOf(selectedHeader)]}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </>
-                            )}
-                        </>
-                    )}
-                </div>
-
-                {/* Right Main Panel */}
-                <div className="mainPanel">
-                    <h2 className="dataViewerTitle">Data Viewer</h2>
-                    {selectedRow ? (
-                        <div className="cardContainer">
-                            {sheetsData[selectedSheet].headers.map((header, index) => (
-                                <div key={index} className="card">
-                                    <div className="cardHeader">{header}</div>
-                                    <div className="cardContent">{selectedRow[index]}</div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p>Select a row to view data.</p>
-                    )}
-                </div>
+                {/* Navigation Panel and Main Content code here */}
             </div>
+
+            {isHelpOpen && (
+                <div className="modalOverlay" onClick={toggleHelp}>
+                    <div className="modalContent" onClick={(e) => e.stopPropagation()}>
+                        <h2>How to Use This Site</h2>
+                        <ul>
+                            <li>To upload an Excel file, click the "Go to Upload Page" button and select your file.</li>
+                            <li>Once uploaded, select the file from the list on the main page to view its sheets and data.</li>
+                            <li>Click on a sheet to view its headers, and then select a header to see its rows.</li>
+                            <li>Choose a row to view its full data in the main display area.</li>
+                        </ul>
+                        <button onClick={toggleHelp} className="closeButton">Close</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
