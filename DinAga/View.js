@@ -12,11 +12,10 @@ export default function MainPage() {
     const [selectedRow, setSelectedRow] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // Fetch the list of available Excel files
     useEffect(() => {
         const fetchFiles = async () => {
             try {
-                const res = await fetch('http://localhost:3001/api/files/list'); // Adjust URL as needed
+                const res = await fetch('http://localhost:3001/api/files/list');
                 if (!res.ok) throw new Error('Failed to fetch file list');
                 
                 const data = await res.json();
@@ -29,7 +28,6 @@ export default function MainPage() {
         fetchFiles();
     }, []);
 
-    // Fetch the parsed XLSX data for the selected file
     const fetchFileData = async (fileName) => {
         setLoading(true);
         try {
@@ -48,41 +46,36 @@ export default function MainPage() {
         }
     };
 
-    // Handle file selection
     const handleFileSelect = (file) => {
         setSelectedFile(file);
         fetchFileData(file);
     };
 
-    // Handle sheet selection
     const handleSheetSelect = (sheetName) => {
         setSelectedSheet(sheetName);
-        setSelectedHeader(null); // Reset header and row selection when changing sheets
+        setSelectedHeader(null);
         setSelectedRow(null);
     };
 
-    // Handle header selection
     const handleHeaderSelect = (header) => {
         setSelectedHeader(header);
-        setSelectedRow(null); // Reset row selection when changing headers
+        setSelectedRow(null);
     };
 
-    // Handle row selection
     const handleRowSelect = (row) => {
         setSelectedRow(row);
     };
 
     return (
-        <div style={{ display: 'flex' }}>
+        <div style={styles.container}>
             {/* Left Navigation Panel */}
-            <div style={{ width: '25%', borderRight: '1px solid #ccc', padding: '10px' }}>
-                {/* File Selection */}
+            <div style={styles.navPanel}>
                 {!selectedFile ? (
                     <>
                         <h3>Select an Excel File</h3>
-                        <ul>
+                        <ul style={styles.list}>
                             {excelFiles.map((file, index) => (
-                                <li key={index} onClick={() => handleFileSelect(file)} style={{ cursor: 'pointer' }}>
+                                <li key={index} onClick={() => handleFileSelect(file)} style={styles.listItem}>
                                     {file}
                                 </li>
                             ))}
@@ -90,11 +83,13 @@ export default function MainPage() {
                     </>
                 ) : (
                     <>
-                        <button onClick={() => setSelectedFile(null)}>Back to File Selection</button>
+                        <button onClick={() => setSelectedFile(null)} style={styles.backButton}>
+                            &larr; Back to File Selection
+                        </button>
                         <h3>Sheets in {selectedFile}</h3>
-                        <ul>
+                        <ul style={styles.list}>
                             {Object.keys(sheetsData).map((sheetName) => (
-                                <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={{ cursor: 'pointer' }}>
+                                <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={styles.listItem}>
                                     {sheetName}
                                 </li>
                             ))}
@@ -103,9 +98,9 @@ export default function MainPage() {
                         {selectedSheet && (
                             <>
                                 <h3>Headers in {selectedSheet}</h3>
-                                <ul>
+                                <ul style={styles.list}>
                                     {sheetsData[selectedSheet].headers.map((header, index) => (
-                                        <li key={index} onClick={() => handleHeaderSelect(header)} style={{ cursor: 'pointer' }}>
+                                        <li key={index} onClick={() => handleHeaderSelect(header)} style={styles.listItem}>
                                             {header}
                                         </li>
                                     ))}
@@ -116,9 +111,9 @@ export default function MainPage() {
                         {selectedHeader && (
                             <>
                                 <h3>Rows in {selectedHeader}</h3>
-                                <ul>
+                                <ul style={styles.list}>
                                     {sheetsData[selectedSheet].rows.map((row, index) => (
-                                        <li key={index} onClick={() => handleRowSelect(row)} style={{ cursor: 'pointer' }}>
+                                        <li key={index} onClick={() => handleRowSelect(row)} style={styles.listItem}>
                                             {row[sheetsData[selectedSheet].headers.indexOf(selectedHeader)]}
                                         </li>
                                     ))}
@@ -130,21 +125,21 @@ export default function MainPage() {
             </div>
 
             {/* Right Main Panel */}
-            <div style={{ width: '75%', padding: '10px' }}>
+            <div style={styles.mainPanel}>
                 <h2>Data Viewer</h2>
                 {selectedRow ? (
-                    <table border="1" cellPadding="5">
+                    <table style={styles.table}>
                         <thead>
                             <tr>
                                 {sheetsData[selectedSheet].headers.map((header, index) => (
-                                    <th key={index}>{header}</th>
+                                    <th key={index} style={styles.tableHeader}>{header}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
                                 {selectedRow.map((cell, index) => (
-                                    <td key={index}>{cell}</td>
+                                    <td key={index} style={styles.tableCell}>{cell}</td>
                                 ))}
                             </tr>
                         </tbody>
@@ -156,3 +151,67 @@ export default function MainPage() {
         </div>
     );
 }
+
+const styles = {
+    container: {
+        display: 'flex',
+        fontFamily: 'Arial, sans-serif',
+        height: '100vh',
+    },
+    navPanel: {
+        width: '25%',
+        borderRight: '1px solid #ddd',
+        padding: '20px',
+        backgroundColor: '#f8f9fa',
+        overflowY: 'auto',
+    },
+    mainPanel: {
+        width: '75%',
+        padding: '20px',
+        overflowY: 'auto',
+    },
+    list: {
+        listStyleType: 'none',
+        padding: 0,
+    },
+    listItem: {
+        padding: '8px 12px',
+        marginBottom: '4px',
+        cursor: 'pointer',
+        borderRadius: '4px',
+        backgroundColor: '#e9ecef',
+        color: '#333',
+        textAlign: 'left',
+    },
+    listItemHover: {
+        backgroundColor: '#ced4da',
+    },
+    backButton: {
+        display: 'inline-block',
+        marginBottom: '15px',
+        padding: '8px 12px',
+        backgroundColor: '#007bff',
+        color: '#fff',
+        border: 'none',
+        borderRadius: '4px',
+        cursor: 'pointer',
+        fontWeight: 'bold',
+    },
+    table: {
+        width: '100%',
+        borderCollapse: 'collapse',
+        marginTop: '20px',
+    },
+    tableHeader: {
+        backgroundColor: '#007bff',
+        color: '#fff',
+        padding: '10px',
+        textAlign: 'left',
+        borderBottom: '2px solid #ddd',
+    },
+    tableCell: {
+        padding: '10px',
+        textAlign: 'left',
+        borderBottom: '1px solid #ddd',
+    },
+};
