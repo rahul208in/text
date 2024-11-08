@@ -1,7 +1,6 @@
 
 import fs from 'fs';
 import path from 'path';
-import { IncomingForm } from 'formidable';
 import Busboy from 'busboy';
 
 export const config = {
