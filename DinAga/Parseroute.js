@@ -6,13 +6,16 @@ import * as XLSX from 'xlsx';
 
 export async function GET() {
     try {
-        // Define the path to the uploaded file (assuming single file for now)
-        const filePath = path.join(process.cwd(), 'public/uploads', 'outlier.xlsx'); // Replace with your actual file name
+        const uploadsDir = path.join(process.cwd(), 'public/uploads');
 
-        // Check if the file exists
-        if (!fs.existsSync(filePath)) {
-            return NextResponse.json({ error: 'File not found' }, { status: 404 });
+        // Find the most recent .xlsx file in the uploads directory
+        const files = fs.readdirSync(uploadsDir).filter(file => file.endsWith('.xlsx'));
+        if (files.length === 0) {
+            return NextResponse.json({ error: 'No XLSX file found' }, { status: 404 });
         }
+
+        // Assume the first file is the one to parse (or select based on your criteria)
+        const filePath = path.join(uploadsDir, files[0]);
 
         // Read and parse the XLSX file
         const workbook = XLSX.readFile(filePath);
