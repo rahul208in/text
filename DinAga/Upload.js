@@ -1,129 +1,62 @@
+
 "use client";
-import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
-import { useRouter } from 'next/navigation';
+
+import React, { useState } from 'react';
 
 const UploadPage = () => {
-  const [files, setFiles] = useState([]);
-  const [sheets, setSheets] = useState([]);
-  const [headers, setHeaders] = useState([]);
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [selectedSheet, setSelectedSheet] = useState(null);
-  const router = useRouter();
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [uploadedFilePath, setUploadedFilePath] = useState('');
 
-  const fetchFiles = async () => {
+  const handleFileUpload = async (e) => {
+    setUploadStatus(''); // Reset status
+    const file = e.target.files[0];
+
+    if (!file) {
+      alert("Please select a file to upload.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
     try {
-      const res = await fetch('/api/files/list');
+      const res = await fetch('/api/files/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
       if (!res.ok) {
-        console.error('Failed to fetch files - Response not OK');
-        setFiles([]);
+        console.error('File upload failed:', res.statusText);
+        setUploadStatus('File upload failed');
         return;
       }
 
       const data = await res.json();
-      setFiles(data);
+      setUploadStatus('File uploaded successfully');
+      setUploadedFilePath(data.filePaths[0]); // Assuming only one file is uploaded
+      console.log('File uploaded successfully:', data.filePaths);
     } catch (error) {
-      console.error('Error fetching files:', error);
-      setFiles([]);
+      console.error('Error uploading file:', error);
+      setUploadStatus('Error uploading file');
     }
   };
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-
-    await fetch('/api/files/upload', {
-      method: 'POST',
-      body: formData,
-    });
-    fetchFiles();
-  };
-
-  const handleFileSelect = async (fileName) => {
-    const res = await fetch(`/uploads/${fileName}`);
-    const data = await res.arrayBuffer();
-    const workbook = XLSX.read(data, { type: 'array' });
-    const sheetNames = workbook.SheetNames;
-    setSheets(sheetNames);
-    setSelectedFile({ name: fileName, workbook });
-  };
-
-  const handleSheetSelect = (sheetName) => {
-    const sheet = selectedFile.workbook.Sheets[sheetName];
-    const sheetData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    setHeaders(sheetData[0]); // First row as headers
-    setSelectedSheet(sheetName);
-  };
-
-  const handleHeaderSelect = (header) => {
-    router.push(`/view?file=${selectedFile.name}&sheet=${selectedSheet}&header=${header}`);
-  };
-
-  useEffect(() => {
-    fetchFiles();
-  }, []);
-
   return (
     <div style={{ padding: '20px' }}>
-      <h2>Upload Excel Files</h2>
-      <input
-        type="file"
-        accept=".xlsx, .xls"
-        onChange={handleFileUpload}
-        style={{ marginBottom: '10px', padding: '8px', cursor: 'pointer' }}
+      <h2>Upload a File</h2>
+      <input 
+        type="file" 
+        onChange={handleFileUpload} 
+        style={{ marginBottom: '10px', cursor: 'pointer' }}
       />
-      <h3>Uploaded Files:</h3>
-      {files.length > 0 ? (
-        <ul>
-          {files.map((file, idx) => (
-            <li key={idx} style={{ marginBottom: '10px' }}>
-              {file}
-              <button onClick={() => handleFileSelect(file)} style={{ marginLeft: '10px' }}>
-                Select
-              </button>
-              <button
-                onClick={async () => {
-                  await fetch(`/api/files/delete?fileName=${file}`, { method: 'DELETE' });
-                  fetchFiles();
-                }}
-                style={{ marginLeft: '10px', color: 'red' }}
-              >
-                Delete
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>No files found. Please upload an Excel file.</p>
-      )}
-
-      {sheets.length > 0 && (
-        <>
-          <h3>Select Sheet</h3>
-          <ul>
-            {sheets.map((sheet, idx) => (
-              <li key={idx} style={{ cursor: 'pointer', margin: '5px 0' }}>
-                <button onClick={() => handleSheetSelect(sheet)}>{sheet}</button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {headers.length > 0 && (
-        <>
-          <h3>Select Header for Navigation Panel</h3>
-          <ul>
-            {headers.map((header, idx) => (
-              <li key={idx} style={{ cursor: 'pointer', margin: '5px 0' }}>
-                <button onClick={() => handleHeaderSelect(header)}>
-                  Use "{header}" as Header
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
+      {uploadStatus && <p>{uploadStatus}</p>}
+      {uploadedFilePath && (
+        <div>
+          <h3>Uploaded File:</h3>
+          <a href={`/uploads/${uploadedFilePath}`} target="_blank" rel="noopener noreferrer">
+            {uploadedFilePath}
+          </a>
+        </div>
       )}
     </div>
   );
