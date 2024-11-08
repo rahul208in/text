@@ -10,8 +10,8 @@ export default function MainPage() {
     useEffect(() => {
         const fetchFiles = async () => {
             try {
-                const res = await fetch('/api/files/list');
-                console.log('Fetch response status:', res.status); // Log response status
+                const res = await fetch('http://localhost:3001/api/files/list'); // Use the full URL with port
+                console.log('Fetch response status:', res.status); // Log response status for debugging
 
                 if (!res.ok) {
                     console.error('Failed to fetch file list');
@@ -21,7 +21,7 @@ export default function MainPage() {
 
                 const data = await res.json();
                 console.log('Fetched files:', data.files); // Log fetched files
-                setFiles(data.files || []); // Default to an empty array if files are undefined
+                setFiles(data.files || []); // Set files to an empty array if undefined
             } catch (error) {
                 console.error('Error fetching files:', error);
             } finally {
