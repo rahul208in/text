@@ -11,6 +11,8 @@ export default function MainPage() {
     const [selectedHeader, setSelectedHeader] = useState(null);
     const [selectedRow, setSelectedRow] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [isSheetOpen, setIsSheetOpen] = useState(true);
+    const [isHeaderOpen, setIsHeaderOpen] = useState(true);
 
     useEffect(() => {
         const fetchFiles = async () => {
@@ -55,11 +57,13 @@ export default function MainPage() {
         setSelectedSheet(sheetName);
         setSelectedHeader(null);
         setSelectedRow(null);
+        setIsSheetOpen(!isSheetOpen); // Toggle sheet section open/close
     };
 
     const handleHeaderSelect = (header) => {
         setSelectedHeader(header);
         setSelectedRow(null);
+        setIsHeaderOpen(!isHeaderOpen); // Toggle header section open/close
     };
 
     const handleRowSelect = (row) => {
@@ -86,25 +90,33 @@ export default function MainPage() {
                         <button onClick={() => setSelectedFile(null)} style={styles.backButton}>
                             &larr; Back to File Selection
                         </button>
-                        <h3>Sheets in {selectedFile}</h3>
-                        <ul style={styles.list}>
-                            {Object.keys(sheetsData).map((sheetName) => (
-                                <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={styles.listItem}>
-                                    {sheetName}
-                                </li>
-                            ))}
-                        </ul>
+                        <h3 onClick={() => setIsSheetOpen(!isSheetOpen)} style={styles.sectionHeader}>
+                            Sheets in {selectedFile} {isSheetOpen ? '▲' : '▼'}
+                        </h3>
+                        {isSheetOpen && (
+                            <ul style={styles.list}>
+                                {Object.keys(sheetsData).map((sheetName) => (
+                                    <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={styles.listItem}>
+                                        {sheetName}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
 
                         {selectedSheet && (
                             <>
-                                <h3>Headers in {selectedSheet}</h3>
-                                <ul style={styles.list}>
-                                    {sheetsData[selectedSheet].headers.map((header, index) => (
-                                        <li key={index} onClick={() => handleHeaderSelect(header)} style={styles.listItem}>
-                                            {header}
-                                        </li>
-                                    ))}
-                                </ul>
+                                <h3 onClick={() => setIsHeaderOpen(!isHeaderOpen)} style={styles.sectionHeader}>
+                                    Headers in {selectedSheet} {isHeaderOpen ? '▲' : '▼'}
+                                </h3>
+                                {isHeaderOpen && (
+                                    <ul style={styles.list}>
+                                        {sheetsData[selectedSheet].headers.map((header, index) => (
+                                            <li key={index} onClick={() => handleHeaderSelect(header)} style={styles.listItem}>
+                                                {header}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
                             </>
                         )}
 
@@ -128,22 +140,14 @@ export default function MainPage() {
             <div style={styles.mainPanel}>
                 <h2>Data Viewer</h2>
                 {selectedRow ? (
-                    <table style={styles.table}>
-                        <thead>
-                            <tr>
-                                {sheetsData[selectedSheet].headers.map((header, index) => (
-                                    <th key={index} style={styles.tableHeader}>{header}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                {selectedRow.map((cell, index) => (
-                                    <td key={index} style={styles.tableCell}>{cell}</td>
-                                ))}
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div style={styles.cardContainer}>
+                        {sheetsData[selectedSheet].headers.map((header, index) => (
+                            <div key={index} style={styles.card}>
+                                <h4>{header}</h4>
+                                <p>{selectedRow[index]}</p>
+                            </div>
+                        ))}
+                    </div>
                 ) : (
                     <p>Select a row to view data.</p>
                 )}
@@ -183,9 +187,6 @@ const styles = {
         color: '#333',
         textAlign: 'left',
     },
-    listItemHover: {
-        backgroundColor: '#ced4da',
-    },
     backButton: {
         display: 'inline-block',
         marginBottom: '15px',
@@ -197,21 +198,24 @@ const styles = {
         cursor: 'pointer',
         fontWeight: 'bold',
     },
-    table: {
-        width: '100%',
-        borderCollapse: 'collapse',
+    sectionHeader: {
+        cursor: 'pointer',
+        fontWeight: 'bold',
         marginTop: '20px',
     },
-    tableHeader: {
-        backgroundColor: '#007bff',
-        color: '#fff',
-        padding: '10px',
-        textAlign: 'left',
-        borderBottom: '2px solid #ddd',
+    cardContainer: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '10px',
     },
-    tableCell: {
+    card: {
+        width: '150px',
         padding: '10px',
-        textAlign: 'left',
-        borderBottom: '1px solid #ddd',
+        borderRadius: '8px',
+        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
+        backgroundColor: '#fff',
+        textAlign: 'center',
     },
 };
+
+export default MainPage;
