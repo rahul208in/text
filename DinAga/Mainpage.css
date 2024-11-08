@@ -1,74 +1,101 @@
-
+/* General Container */
 .container {
     display: flex;
     flex-direction: column;
-    font-family: Arial, sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     height: 100vh;
+    background-color: #f4f6f9;
 }
 
+/* Main Content Layout */
 .mainContent {
     display: flex;
-    height: calc(100vh - 50px); /* Adjust height to fit below the upload button */
+    height: calc(100vh - 60px);
 }
 
+/* Navigation Panel */
 .navPanel {
     width: 25%;
     border-right: 1px solid #ddd;
     padding: 20px;
     background-color: #f8f9fa;
     overflow-y: auto;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
 }
 
+/* Main Panel */
 .mainPanel {
     width: 75%;
     padding: 20px;
     overflow-y: auto;
-    background-color: #f5f8fa;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Upload Button */
 .uploadButton {
     align-self: flex-start;
     margin: 10px 20px;
-    padding: 10px 15px;
-    background-color: #28a745;
+    padding: 10px 20px;
+    background-color: #5cb85c;
     color: #fff;
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 16px;
+    font-weight: bold;
+    transition: background-color 0.3s ease;
 }
 
+.uploadButton:hover {
+    background-color: #4cae4c;
+}
+
+/* Lists in Navigation Panel */
 .list {
     list-style-type: none;
     padding: 0;
+    margin-top: 10px;
 }
 
 .listItem {
-    padding: 8px 12px;
-    margin-bottom: 4px;
+    padding: 10px 15px;
+    margin-bottom: 6px;
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: 6px;
     background-color: #e9ecef;
     color: #333;
-    text-align: left;
     transition: background-color 0.2s ease;
+    font-weight: 500;
 }
 
+.listItem:hover {
+    background-color: #cdd4db;
+}
+
+/* Back Button */
 .backButton {
     display: inline-block;
     margin-bottom: 15px;
-    padding: 8px 12px;
+    padding: 10px 15px;
     background-color: #007bff;
     color: #fff;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-weight: bold;
+    transition: background-color 0.3s ease;
 }
 
+.backButton:hover {
+    background-color: #0056b3;
+}
+
+/* Section Headers */
 .sectionContainer {
     margin-bottom: 15px;
-    padding: 10px;
+    padding: 12px;
     border-radius: 8px;
     background-color: #f1f3f5;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -78,27 +105,37 @@
     cursor: pointer;
     font-weight: bold;
     margin-top: 10px;
-    margin-bottom: 10px;
     color: #495057;
     padding: 8px 12px;
     background-color: #e0e7ff;
     border-radius: 6px;
+    font-size: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
+/* Card Container for Pallets */
 .cardContainer {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 15px;
 }
 
+/* Individual Cards (Pallets) */
 .card {
-    width: 150px;
-    padding: 10px;
-    border-radius: 8px;
+    width: 160px;
+    padding: 12px;
+    border-radius: 10px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    background-color: #fff;
+    background-color: #ffffff;
     text-align: center;
-    transition: box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
 .cardHeader {
@@ -106,20 +143,24 @@
     font-size: 16px;
     color: #4a4a4a;
     padding: 6px 0;
-    border-bottom: 1px solid #dee2e6;
-    background-color: #f8f9fa;
-    border-radius: 6px 6px 0 0;
+    background-color: #f1f3f5;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    margin-bottom: 8px;
 }
 
 .cardContent {
     font-size: 14px;
-    color: #333;
-    padding: 10px;
+    color: #495057;
+    padding: 8px;
 }
 
+/* Data Viewer Title */
 .dataViewerTitle {
     color: #495057;
     margin-bottom: 20px;
     font-size: 22px;
-    font-weight: 600;
+    font-weight: bold;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 10px;
 }
