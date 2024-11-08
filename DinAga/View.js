@@ -2,8 +2,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import '../styles/MainPage.css';
 
 export default function MainPage() {
+    const router = useRouter();
     const [excelFiles, setExcelFiles] = useState([]);
     const [selectedFile, setSelectedFile] = useState(null);
     const [sheetsData, setSheetsData] = useState({});
@@ -57,13 +60,13 @@ export default function MainPage() {
         setSelectedSheet(sheetName);
         setSelectedHeader(null);
         setSelectedRow(null);
-        setIsSheetOpen(!isSheetOpen); // Toggle sheet section open/close
+        setIsSheetOpen(!isSheetOpen);
     };
 
     const handleHeaderSelect = (header) => {
         setSelectedHeader(header);
         setSelectedRow(null);
-        setIsHeaderOpen(!isHeaderOpen); // Toggle header section open/close
+        setIsHeaderOpen(!isHeaderOpen);
     };
 
     const handleRowSelect = (row) => {
@@ -71,189 +74,96 @@ export default function MainPage() {
     };
 
     return (
-        <div style={styles.container}>
-            {/* Left Navigation Panel */}
-            <div style={styles.navPanel}>
-                {!selectedFile ? (
-                    <>
-                        <h3>Select an Excel File</h3>
-                        <ul style={styles.list}>
-                            {excelFiles.map((file, index) => (
-                                <li key={index} onClick={() => handleFileSelect(file)} style={styles.listItem}>
-                                    {file}
-                                </li>
-                            ))}
-                        </ul>
-                    </>
-                ) : (
-                    <>
-                        <button onClick={() => setSelectedFile(null)} style={styles.backButton}>
-                            &larr; Back to File Selection
-                        </button>
-                        <div style={styles.sectionContainer}>
-                            <h3 onClick={() => setIsSheetOpen(!isSheetOpen)} style={styles.sectionHeader}>
-                                Sheets in {selectedFile} {isSheetOpen ? '▲' : '▼'}
-                            </h3>
-                            {isSheetOpen && (
-                                <ul style={styles.list}>
-                                    {Object.keys(sheetsData).map((sheetName) => (
-                                        <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={styles.listItem}>
-                                            {sheetName}
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
+        <div className="container">
+            {/* Upload Button */}
+            <button onClick={() => router.push('/upload')} className="uploadButton">
+                Go to Upload Page
+            </button>
 
-                        {selectedSheet && (
-                            <div style={styles.sectionContainer}>
-                                <h3 onClick={() => setIsHeaderOpen(!isHeaderOpen)} style={styles.sectionHeader}>
-                                    Headers in {selectedSheet} {isHeaderOpen ? '▲' : '▼'}
+            <div className="mainContent">
+                {/* Left Navigation Panel */}
+                <div className="navPanel">
+                    {!selectedFile ? (
+                        <>
+                            <h3>Select an Excel File</h3>
+                            <ul className="list">
+                                {excelFiles.map((file, index) => (
+                                    <li key={index} onClick={() => handleFileSelect(file)} className="listItem">
+                                        {file}
+                                    </li>
+                                ))}
+                            </ul>
+                        </>
+                    ) : (
+                        <>
+                            <button onClick={() => setSelectedFile(null)} className="backButton">
+                                &larr; Back to File Selection
+                            </button>
+                            <div className="sectionContainer">
+                                <h3 onClick={() => setIsSheetOpen(!isSheetOpen)} className="sectionHeader">
+                                    Sheets in {selectedFile} {isSheetOpen ? '▲' : '▼'}
                                 </h3>
-                                {isHeaderOpen && (
-                                    <ul style={styles.list}>
-                                        {sheetsData[selectedSheet].headers.map((header, index) => (
-                                            <li key={index} onClick={() => handleHeaderSelect(header)} style={styles.listItem}>
-                                                {header}
+                                {isSheetOpen && (
+                                    <ul className="list">
+                                        {Object.keys(sheetsData).map((sheetName) => (
+                                            <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} className="listItem">
+                                                {sheetName}
                                             </li>
                                         ))}
                                     </ul>
                                 )}
                             </div>
-                        )}
 
-                        {selectedHeader && (
-                            <>
-                                <h3>Rows in {selectedHeader}</h3>
-                                <ul style={styles.list}>
-                                    {sheetsData[selectedSheet].rows.map((row, index) => (
-                                        <li key={index} onClick={() => handleRowSelect(row)} style={styles.listItem}>
-                                            {row[sheetsData[selectedSheet].headers.indexOf(selectedHeader)]}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </>
-                        )}
-                    </>
-                )}
-            </div>
+                            {selectedSheet && (
+                                <div className="sectionContainer">
+                                    <h3 onClick={() => setIsHeaderOpen(!isHeaderOpen)} className="sectionHeader">
+                                        Headers in {selectedSheet} {isHeaderOpen ? '▲' : '▼'}
+                                    </h3>
+                                    {isHeaderOpen && (
+                                        <ul className="list">
+                                            {sheetsData[selectedSheet].headers.map((header, index) => (
+                                                <li key={index} onClick={() => handleHeaderSelect(header)} className="listItem">
+                                                    {header}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
 
-            {/* Right Main Panel */}
-            <div style={styles.mainPanel}>
-                <h2 style={styles.dataViewerTitle}>Data Viewer</h2>
-                {selectedRow ? (
-                    <div style={styles.cardContainer}>
-                        {sheetsData[selectedSheet].headers.map((header, index) => (
-                            <div key={index} style={styles.card}>
-                                <div style={styles.cardHeader}>{header}</div>
-                                <div style={styles.cardContent}>{selectedRow[index]}</div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <p>Select a row to view data.</p>
-                )}
+                            {selectedHeader && (
+                                <>
+                                    <h3>Rows in {selectedHeader}</h3>
+                                    <ul className="list">
+                                        {sheetsData[selectedSheet].rows.map((row, index) => (
+                                            <li key={index} onClick={() => handleRowSelect(row)} className="listItem">
+                                                {row[sheetsData[selectedSheet].headers.indexOf(selectedHeader)]}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </>
+                            )}
+                        </>
+                    )}
+                </div>
+
+                {/* Right Main Panel */}
+                <div className="mainPanel">
+                    <h2 className="dataViewerTitle">Data Viewer</h2>
+                    {selectedRow ? (
+                        <div className="cardContainer">
+                            {sheetsData[selectedSheet].headers.map((header, index) => (
+                                <div key={index} className="card">
+                                    <div className="cardHeader">{header}</div>
+                                    <div className="cardContent">{selectedRow[index]}</div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p>Select a row to view data.</p>
+                    )}
+                </div>
             </div>
         </div>
     );
 }
-
-const styles = {
-    container: {
-        display: 'flex',
-        fontFamily: 'Arial, sans-serif',
-        height: '100vh',
-    },
-    navPanel: {
-        width: '25%',
-        borderRight: '1px solid #ddd',
-        padding: '20px',
-        backgroundColor: '#f8f9fa',
-        overflowY: 'auto',
-    },
-    mainPanel: {
-        width: '75%',
-        padding: '20px',
-        overflowY: 'auto',
-        backgroundColor: '#f5f8fa',
-    },
-    list: {
-        listStyleType: 'none',
-        padding: 0,
-    },
-    listItem: {
-        padding: '8px 12px',
-        marginBottom: '4px',
-        cursor: 'pointer',
-        borderRadius: '4px',
-        backgroundColor: '#e9ecef',
-        color: '#333',
-        textAlign: 'left',
-        transition: 'background-color 0.2s ease',
-    },
-    listItemHover: {
-        backgroundColor: '#ced4da',
-    },
-    backButton: {
-        display: 'inline-block',
-        marginBottom: '15px',
-        padding: '8px 12px',
-        backgroundColor: '#007bff',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        fontWeight: 'bold',
-    },
-    sectionContainer: {
-        marginBottom: '15px',
-        padding: '10px',
-        borderRadius: '8px',
-        backgroundColor: '#f1f3f5',
-        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-    },
-    sectionHeader: {
-        cursor: 'pointer',
-        fontWeight: 'bold',
-        marginTop: '10px',
-        marginBottom: '10px',
-        color: '#495057',
-        padding: '8px 12px',
-        backgroundColor: '#e0e7ff',
-        borderRadius: '6px',
-    },
-    cardContainer: {
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '10px',
-    },
-    card: {
-        width: '150px',
-        padding: '10px',
-        borderRadius: '8px',
-        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
-        backgroundColor: '#fff',
-        textAlign: 'center',
-        transition: 'box-shadow 0.2s ease',
-    },
-    cardHeader: {
-        fontWeight: 'bold',
-        fontSize: '16px',
-        color: '#4a4a4a',
-        padding: '6px 0',
-        borderBottom: '1px solid #dee2e6',
-        backgroundColor: '#f8f9fa',
-        borderRadius: '6px 6px 0 0',
-    },
-    cardContent: {
-        fontSize: '14px',
-        color: '#333',
-        padding: '10px',
-    },
-    dataViewerTitle: {
-        color: '#495057',
-        marginBottom: '20px',
-        fontSize: '22px',
-        fontWeight: '600',
-    },
-};
