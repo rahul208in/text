@@ -90,21 +90,23 @@ export default function MainPage() {
                         <button onClick={() => setSelectedFile(null)} style={styles.backButton}>
                             &larr; Back to File Selection
                         </button>
-                        <h3 onClick={() => setIsSheetOpen(!isSheetOpen)} style={styles.sectionHeader}>
-                            Sheets in {selectedFile} {isSheetOpen ? '▲' : '▼'}
-                        </h3>
-                        {isSheetOpen && (
-                            <ul style={styles.list}>
-                                {Object.keys(sheetsData).map((sheetName) => (
-                                    <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={styles.listItem}>
-                                        {sheetName}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
+                        <div style={styles.sectionContainer}>
+                            <h3 onClick={() => setIsSheetOpen(!isSheetOpen)} style={styles.sectionHeader}>
+                                Sheets in {selectedFile} {isSheetOpen ? '▲' : '▼'}
+                            </h3>
+                            {isSheetOpen && (
+                                <ul style={styles.list}>
+                                    {Object.keys(sheetsData).map((sheetName) => (
+                                        <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} style={styles.listItem}>
+                                            {sheetName}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
 
                         {selectedSheet && (
-                            <>
+                            <div style={styles.sectionContainer}>
                                 <h3 onClick={() => setIsHeaderOpen(!isHeaderOpen)} style={styles.sectionHeader}>
                                     Headers in {selectedSheet} {isHeaderOpen ? '▲' : '▼'}
                                 </h3>
@@ -117,7 +119,7 @@ export default function MainPage() {
                                         ))}
                                     </ul>
                                 )}
-                            </>
+                            </div>
                         )}
 
                         {selectedHeader && (
@@ -138,13 +140,13 @@ export default function MainPage() {
 
             {/* Right Main Panel */}
             <div style={styles.mainPanel}>
-                <h2>Data Viewer</h2>
+                <h2 style={styles.dataViewerTitle}>Data Viewer</h2>
                 {selectedRow ? (
                     <div style={styles.cardContainer}>
                         {sheetsData[selectedSheet].headers.map((header, index) => (
                             <div key={index} style={styles.card}>
-                                <h4>{header}</h4>
-                                <p>{selectedRow[index]}</p>
+                                <div style={styles.cardHeader}>{header}</div>
+                                <div style={styles.cardContent}>{selectedRow[index]}</div>
                             </div>
                         ))}
                     </div>
@@ -173,6 +175,7 @@ const styles = {
         width: '75%',
         padding: '20px',
         overflowY: 'auto',
+        backgroundColor: '#f5f8fa',
     },
     list: {
         listStyleType: 'none',
@@ -186,6 +189,10 @@ const styles = {
         backgroundColor: '#e9ecef',
         color: '#333',
         textAlign: 'left',
+        transition: 'background-color 0.2s ease',
+    },
+    listItemHover: {
+        backgroundColor: '#ced4da',
     },
     backButton: {
         display: 'inline-block',
@@ -198,10 +205,22 @@ const styles = {
         cursor: 'pointer',
         fontWeight: 'bold',
     },
+    sectionContainer: {
+        marginBottom: '15px',
+        padding: '10px',
+        borderRadius: '8px',
+        backgroundColor: '#f1f3f5',
+        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    },
     sectionHeader: {
         cursor: 'pointer',
         fontWeight: 'bold',
-        marginTop: '20px',
+        marginTop: '10px',
+        marginBottom: '10px',
+        color: '#495057',
+        padding: '8px 12px',
+        backgroundColor: '#e0e7ff',
+        borderRadius: '6px',
     },
     cardContainer: {
         display: 'flex',
@@ -215,7 +234,26 @@ const styles = {
         boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)',
         backgroundColor: '#fff',
         textAlign: 'center',
+        transition: 'box-shadow 0.2s ease',
+    },
+    cardHeader: {
+        fontWeight: 'bold',
+        fontSize: '16px',
+        color: '#4a4a4a',
+        padding: '6px 0',
+        borderBottom: '1px solid #dee2e6',
+        backgroundColor: '#f8f9fa',
+        borderRadius: '6px 6px 0 0',
+    },
+    cardContent: {
+        fontSize: '14px',
+        color: '#333',
+        padding: '10px',
+    },
+    dataViewerTitle: {
+        color: '#495057',
+        marginBottom: '20px',
+        fontSize: '22px',
+        fontWeight: '600',
     },
 };
-
-export default MainPage;
