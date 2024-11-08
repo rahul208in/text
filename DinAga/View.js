@@ -142,7 +142,7 @@ export default function MainPage() {
                             <li>Click a sheet to see its headers, and then select a header to view rows.</li>
                             <li>Select a row to see detailed data displayed on the right.</li>
                         </ul>
-                        <button onClick={toggleHelp} className="closeButton">Close</button>
+                        <button onClick={toggleHelp} className="closeButton">Closse</button>
                     </div>
                 </div>
             )}
