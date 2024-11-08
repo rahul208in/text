@@ -1,4 +1,57 @@
+/* Card Container for Pallets */
+.cardContainer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+}
 
+/* Individual Cards (Pallets) */
+.card {
+    width: 160px;
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    background-color: #ffffff;
+    text-align: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Header inside each card */
+.cardHeader {
+    font-weight: bold;
+    font-size: 14px; /* Adjust font size to fit longer text */
+    color: #3a3a3a; /* Darker color for header text */
+    padding: 6px 0;
+    background-color: #f1f3f5;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    margin-bottom: 8px;
+    white-space: normal; /* Allow text to wrap to multiple lines */
+    word-wrap: break-word;
+    line-height: 1.2;
+    max-height: 3.6em; /* Limit height to fit within the card */
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Content inside each card */
+.cardContent {
+    font-size: 13px;
+    color: #495057;
+    padding: 6px;
+    white-space: normal; /* Allow text to wrap to multiple lines */
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.4;
+}
 /* Top Buttons Container */
 .topButtons {
     display: flex;
