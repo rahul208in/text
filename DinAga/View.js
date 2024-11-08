@@ -7,19 +7,21 @@ export default function MainPage() {
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Fetch the list of files from the server
     useEffect(() => {
         const fetchFiles = async () => {
             try {
                 const res = await fetch('/api/files/list');
+                console.log('Fetch response status:', res.status); // Log response status
+
                 if (!res.ok) {
                     console.error('Failed to fetch file list');
                     setLoading(false);
                     return;
                 }
-                
+
                 const data = await res.json();
-                setFiles(data.files);
+                console.log('Fetched files:', data.files); // Log fetched files
+                setFiles(data.files || []); // Default to an empty array if files are undefined
             } catch (error) {
                 console.error('Error fetching files:', error);
             } finally {
@@ -37,13 +39,17 @@ export default function MainPage() {
                 <p>Loading files...</p>
             ) : (
                 <ul>
-                    {files.map((file, index) => (
-                        <li key={index}>
-                            <a href={`/uploads/${file}`} target="_blank" rel="noopener noreferrer">
-                                {file}
-                            </a>
-                        </li>
-                    ))}
+                    {files.length > 0 ? (
+                        files.map((file, index) => (
+                            <li key={index}>
+                                <a href={`/uploads/${file}`} target="_blank" rel="noopener noreferrer">
+                                    {file}
+                                </a>
+                            </li>
+                        ))
+                    ) : (
+                        <p>No files found.</p>
+                    )}
                 </ul>
             )}
         </div>
