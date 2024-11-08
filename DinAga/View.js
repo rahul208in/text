@@ -13,7 +13,10 @@ export default function MainPage() {
     const [selectedSheet, setSelectedSheet] = useState(null);
     const [selectedHeader, setSelectedHeader] = useState(null);
     const [selectedRow, setSelectedRow] = useState(null);
-    const [isHelpOpen, setIsHelpOpen] = useState(false); // State to control Help modal
+    const [loading, setLoading] = useState(true);
+    const [isSheetOpen, setIsSheetOpen] = useState(true);
+    const [isHeaderOpen, setIsHeaderOpen] = useState(true);
+    const [isHelpOpen, setIsHelpOpen] = useState(false); // State for help modal
 
     useEffect(() => {
         const fetchFiles = async () => {
@@ -31,8 +34,48 @@ export default function MainPage() {
         fetchFiles();
     }, []);
 
+    const fetchFileData = async (fileName) => {
+        setLoading(true);
+        try {
+            const res = await fetch(`http://localhost:3001/api/files/parse?file=${fileName}`);
+            if (!res.ok) throw new Error('Failed to fetch sheets data');
+            
+            const data = await res.json();
+            setSheetsData(data.sheetsData);
+            setSelectedSheet(null);
+            setSelectedHeader(null);
+            setSelectedRow(null);
+        } catch (error) {
+            console.error('Error fetching sheets data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleFileSelect = (file) => {
+        setSelectedFile(file);
+        fetchFileData(file);
+    };
+
+    const handleSheetSelect = (sheetName) => {
+        setSelectedSheet(sheetName);
+        setSelectedHeader(null);
+        setSelectedRow(null);
+        setIsSheetOpen(!isSheetOpen);
+    };
+
+    const handleHeaderSelect = (header) => {
+        setSelectedHeader(header);
+        setSelectedRow(null);
+        setIsHeaderOpen(!isHeaderOpen);
+    };
+
+    const handleRowSelect = (row) => {
+        setSelectedRow(row);
+    };
+
     const toggleHelp = () => {
-        setIsHelpOpen(!isHelpOpen);
+        setIsHelpOpen(!isHelpOpen); // Toggle help modal
     };
 
     return (
@@ -54,7 +97,7 @@ export default function MainPage() {
                             <h3>Select an Excel File</h3>
                             <ul className="list">
                                 {excelFiles.map((file, index) => (
-                                    <li key={index} onClick={() => setSelectedFile(file)} className="listItem">
+                                    <li key={index} onClick={() => handleFileSelect(file)} className="listItem">
                                         {file}
                                     </li>
                                 ))}
@@ -66,13 +109,13 @@ export default function MainPage() {
                                 &larr; Back to File Selection
                             </button>
                             <div className="sectionContainer">
-                                <h3 className="sectionHeader" onClick={() => setSelectedSheet(selectedSheet ? null : selectedFile)}>
-                                    Sheets in {selectedFile} {selectedSheet ? '▲' : '▼'}
+                                <h3 onClick={() => setIsSheetOpen(!isSheetOpen)} className="sectionHeader">
+                                    Sheets in {selectedFile} {isSheetOpen ? '▲' : '▼'}
                                 </h3>
-                                {selectedSheet && (
+                                {isSheetOpen && (
                                     <ul className="list">
                                         {Object.keys(sheetsData).map((sheetName) => (
-                                            <li key={sheetName} onClick={() => setSelectedSheet(sheetName)} className="listItem">
+                                            <li key={sheetName} onClick={() => handleSheetSelect(sheetName)} className="listItem">
                                                 {sheetName}
                                             </li>
                                         ))}
@@ -82,13 +125,13 @@ export default function MainPage() {
 
                             {selectedSheet && (
                                 <div className="sectionContainer">
-                                    <h3 className="sectionHeader" onClick={() => setSelectedHeader(selectedHeader ? null : selectedSheet)}>
-                                        Headers in {selectedSheet} {selectedHeader ? '▲' : '▼'}
+                                    <h3 onClick={() => setIsHeaderOpen(!isHeaderOpen)} className="sectionHeader">
+                                        Headers in {selectedSheet} {isHeaderOpen ? '▲' : '▼'}
                                     </h3>
-                                    {selectedHeader && (
+                                    {isHeaderOpen && (
                                         <ul className="list">
-                                            {sheetsData[selectedSheet].headers.map((header, index) => (
-                                                <li key={index} onClick={() => setSelectedHeader(header)} className="listItem">
+                                            {sheetsData[selectedSheet]?.headers?.map((header, index) => (
+                                                <li key={index} onClick={() => handleHeaderSelect(header)} className="listItem">
                                                     {header}
                                                 </li>
                                             ))}
@@ -101,8 +144,8 @@ export default function MainPage() {
                                 <>
                                     <h3>Rows in {selectedHeader}</h3>
                                     <ul className="list">
-                                        {sheetsData[selectedSheet].rows.map((row, index) => (
-                                            <li key={index} onClick={() => setSelectedRow(row)} className="listItem">
+                                        {sheetsData[selectedSheet]?.rows?.map((row, index) => (
+                                            <li key={index} onClick={() => handleRowSelect(row)} className="listItem">
                                                 {row[sheetsData[selectedSheet].headers.indexOf(selectedHeader)]}
                                             </li>
                                         ))}
@@ -142,7 +185,7 @@ export default function MainPage() {
                             <li>Click a sheet to see its headers, and then select a header to view rows.</li>
                             <li>Select a row to see detailed data displayed on the right.</li>
                         </ul>
-                        <button onClick={toggleHelp} className="closeButton">Closse</button>
+                        <button onClick={toggleHelp} className="closeButton">Close</button>
                     </div>
                 </div>
             )}
