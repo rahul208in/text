@@ -14,29 +14,42 @@
 </head>
 <body>
     <h1>SBOM to HTML Converter</h1>
-    <input type="file" id="sbomFile" accept=".json">
-    <button id="convertBtn">Convert to HTML</button>
-    <div id="sbomData"></div>
+    <input type="file" id="sbom-file" accept=".json">
+    <button id="convert-button">Convert to HTML</button>
+    <div id="sbom-data"></div>
 
     <script>
-        const sbomFileInput = document.getElementById('sbomFile');
-        const convertBtn = document.getElementById('convertBtn');
-        const sbomDataDiv = document.getElementById('sbomData');
+        const sbomFileInput = document.getElementById('sbom-file');
+        const convertButton = document.getElementById('convert-button');
+        const sbomDataDiv = document.getElementById('sbom-data');
 
-        convertBtn.addEventListener('click', () => {
+        convertButton.addEventListener('click', () => {
             const file = sbomFileInput.files <sup> </sup>;
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const sbomData = JSON.parse(e.target.result);
-                    convertSBOMtoHTML(sbomData);
-                };
-                reader.readAsText(file);
+            if (!file) {
+                alert('Please select a SBOM JSON file');
+                return;
             }
+
+            if (!file.name.endsWith('.json')) {
+                alert('Please select a JSON file');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const sbomData = JSON.parse(event.target.result);
+                    convertSBOMtoHTML(sbomData);
+                } catch (error) {
+                    alert('Error parsing JSON file:'+ error.message);
+                }
+            };
+            reader.readAsText(file);
         });
 
         function convertSBOMtoHTML(sbomData) {
             sbomDataDiv.innerHTML = '';
+
             sbomData.forEach(dependency => {
                 const table = document.createElement('table');
                 table.innerHTML = `
