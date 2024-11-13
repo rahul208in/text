@@ -1,67 +1,96 @@
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>SBOM to HTML Converter</title>
-    <style>
-        table {
-            border-collapse: collapse;
-        }
-        table, th, td {
-            border: 1px solid black;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CycloneDX SBOM Viewer</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .container { max-width: 800px; margin: auto; }
+    .section { margin-bottom: 20px; }
+    h2 { color: #333; border-bottom: 2px solid #333; padding-bottom: 5px; }
+    pre { background: #f4f4f4; padding: 10px; border: 1px solid #ddd; overflow: auto; }
+    .component { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    .external-ref { margin-left: 20px; font-style: italic; }
+  </style>
 </head>
 <body>
-    <h1>SBOM to HTML Converter</h1>
-    <input type="file" id="sbom-file" accept=".json">
-    <button id="convert-button">Convert to HTML</button>
-    <div id="sbom-data"></div>
 
-    <script>
-        const sbomFileInput = document.getElementById('sbom-file');
-        const convertButton = document.getElementById('convert-button');
-        const sbomDataDiv = document.getElementById('sbom-data');
+<div class="container">
+  <h1>CycloneDX SBOM Viewer</h1>
 
-        convertButton.addEventListener('click', () => {
-            const file = sbomFileInput.files <sup> </sup>;
-            if (!file) {
-                alert('Please select a SBOM JSON file');
-                return;
-            }
+  <!-- Input section for SBOM JSON file -->
+  <input type="file" id="fileInput" accept=".json">
+  <button onclick="loadSBOM()">Load SBOM</button>
 
-            if (!file.name.endsWith('.json')) {
-                alert('Please select a JSON file');
-                return;
-            }
+  <!-- BOM Info Section -->
+  <div id="bomInfo" class="section"></div>
 
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try {
-                    const sbomData = JSON.parse(event.target.result);
-                    convertSBOMtoHTML(sbomData);
-                } catch (error) {
-                    alert('Error parsing JSON file:'+ error.message);
-                }
-            };
-            reader.readAsText(file);
-        });
+  <!-- Components Section -->
+  <div id="components" class="section"></div>
+</div>
 
-        function convertSBOMtoHTML(sbomData) {
-            sbomDataDiv.innerHTML = '';
+<script>
+  function loadSBOM() {
+    const fileInput = document.getElementById("fileInput");
+    const file = fileInput.files[0];
+    if (!file) {
+      alert("Please select a file.");
+      return;
+    }
 
-            sbomData.forEach(dependency => {
-                const table = document.createElement('table');
-                table.innerHTML = `
-                    <tr><th>Library</th><td>${dependency.name}</td></tr>
-                    <tr><th>Version</th><td>${dependency.version}</td></tr>
-                    <tr><th>Description</th><td>${dependency.description}</td></tr>
-                    <tr><th>Licenses</th><td>${dependency.licenses.map(license => license.license.id).join(', ')}</td></tr>
-                    <tr><th>PURL</th><td>${dependency.purl}</td></tr>
-                `;
-                sbomDataDiv.appendChild(table);
-            });
-        }
-    </script>
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const data = JSON.parse(e.target.result);
+      displaySBOM(data);
+    };
+    reader.readAsText(file);
+  }
+
+  function displaySBOM(data) {
+    const bomInfo = document.getElementById("bomInfo");
+    const componentsSection = document.getElementById("components");
+
+    // Display general BOM info
+    bomInfo.innerHTML = `
+      <h2>BOM Information</h2>
+      <p><strong>Format:</strong> ${data.bomFormat}</p>
+      <p><strong>Spec Version:</strong> ${data.specVersion}</p>
+      <p><strong>Serial Number:</strong> ${data.serialNumber}</p>
+      <p><strong>Version:</strong> ${data.version}</p>
+      <p><strong>Timestamp:</strong> ${data.metadata.timestamp}</p>
+    `;
+
+    // Display metadata (tools and main component info)
+    if (data.metadata && data.metadata.tools) {
+      data.metadata.tools.forEach(tool => {
+        bomInfo.innerHTML += `
+          <p><strong>Tool:</strong> ${tool.vendor} ${tool.name} (v${tool.version})</p>
+        `;
+      });
+    }
+
+    // Display components
+    componentsSection.innerHTML = `<h2>Components</h2>`;
+    data.components.forEach(component => {
+      componentsSection.innerHTML += `
+        <div class="component">
+          <p><strong>Name:</strong> ${component.name} (v${component.version})</p>
+          <p><strong>Description:</strong> ${component.description || "N/A"}</p>
+          <p><strong>Type:</strong> ${component.type}</p>
+          <p><strong>License:</strong> ${component.licenses?.[0]?.license?.id || "N/A"}</p>
+          <p><strong>Package URL (PURL):</strong> ${component.purl}</p>
+          <h4>External References:</h4>
+          <ul>
+            ${component.externalReferences.map(ref => `
+              <li class="external-ref"><strong>${ref.type}:</strong> <a href="${ref.url}" target="_blank">${ref.url}</a></li>
+            `).join('')}
+          </ul>
+        </div>
+      `;
+    });
+  }
+</script>
 </body>
 </html>
