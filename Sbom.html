@@ -83,9 +83,13 @@
           <p><strong>Package URL (PURL):</strong> ${component.purl}</p>
           <h4>External References:</h4>
           <ul>
-            ${component.externalReferences.map(ref => `
-              <li class="external-ref"><strong>${ref.type}:</strong> <a href="${ref.url}" target="_blank">${ref.url}</a></li>
-            `).join('')}
+            ${
+              component.externalReferences 
+              ? component.externalReferences.map(ref => `
+                <li class="external-ref"><strong>${ref.type}:</strong> <a href="${ref.url}" target="_blank">${ref.url}</a></li>
+              `).join('')
+              : '<li class="external-ref">None</li>'
+            }
           </ul>
         </div>
       `;
