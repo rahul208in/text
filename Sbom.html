@@ -1,0 +1,54 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SBOM to HTML Converter</title>
+    <style>
+        table {
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <h1>SBOM to HTML Converter</h1>
+    <input type="file" id="sbomFile" accept=".json">
+    <button id="convertBtn">Convert to HTML</button>
+    <div id="sbomData"></div>
+
+    <script>
+        const sbomFileInput = document.getElementById('sbomFile');
+        const convertBtn = document.getElementById('convertBtn');
+        const sbomDataDiv = document.getElementById('sbomData');
+
+        convertBtn.addEventListener('click', () => {
+            const file = sbomFileInput.files <sup> </sup>;
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const sbomData = JSON.parse(e.target.result);
+                    convertSBOMtoHTML(sbomData);
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        function convertSBOMtoHTML(sbomData) {
+            sbomDataDiv.innerHTML = '';
+            sbomData.forEach(dependency => {
+                const table = document.createElement('table');
+                table.innerHTML = `
+                    <tr><th>Library</th><td>${dependency.name}</td></tr>
+                    <tr><th>Version</th><td>${dependency.version}</td></tr>
+                    <tr><th>Description</th><td>${dependency.description}</td></tr>
+                    <tr><th>Licenses</th><td>${dependency.licenses.map(license => license.license.id).join(', ')}</td></tr>
+                    <tr><th>PURL</th><td>${dependency.purl}</td></tr>
+                `;
+                sbomDataDiv.appendChild(table);
+            });
+        }
+    </script>
+</body>
+</html>
