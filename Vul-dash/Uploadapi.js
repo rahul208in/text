@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { NextResponse } from 'next/server';
-import formidable from 'formidable';
+import { IncomingForm } from 'formidable';
 
 export const config = {
   api: {
@@ -32,7 +32,7 @@ export async function POST(req) {
     // Send success response
     return NextResponse.json({ message: 'File uploaded successfully', filePath });
   } catch (error) {
-    console.error(error);
+    console.error("Upload error:", error);
     return NextResponse.json({ error: 'File upload failed' }, { status: 500 });
   }
 }
@@ -40,12 +40,15 @@ export async function POST(req) {
 // Helper function to parse form data
 function parseFormData(req) {
   return new Promise((resolve, reject) => {
-    const form = new formidable.IncomingForm();
+    const form = new IncomingForm();
     form.uploadDir = path.join(process.cwd(), 'tmp'); // Temporary directory for file storage
     form.keepExtensions = true;
 
     form.parse(req, (err, fields, files) => {
-      if (err) reject(err);
+      if (err) {
+        console.error("Form parse error:", err);
+        reject(err);
+      }
       resolve({ fields, files });
     });
   });
