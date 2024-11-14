@@ -10,7 +10,12 @@
     .container { max-width: 800px; margin: auto; }
     .section { margin-bottom: 20px; }
     h2 { color: #333; border-bottom: 2px solid #333; padding-bottom: 5px; }
-    .component, .dependency { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    .summary-box { background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+    .component, .dependency { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9; border-radius: 5px; }
+    .dropdown { cursor: pointer; padding: 8px; background-color: #eee; border-radius: 5px; margin-bottom: 5px; font-weight: bold; }
+    .dropdown-content { display: none; padding: 10px; }
+    .dropdown:hover { background-color: #ddd; }
+    .external-ref { margin-left: 20px; font-style: italic; }
   </style>
 </head>
 <body>
@@ -64,38 +69,55 @@
       <p><strong>Timestamp:</strong> ${data.metadata?.timestamp || "N/A"}</p>
     `;
 
-    // Display components
-    componentsSection.innerHTML = `<h2>Components</h2>`;
+    // Display components with count
+    componentsSection.innerHTML = `
+      <div class="summary-box">Total Components: ${data.components.length}</div>
+      <h2>Components</h2>
+    `;
     data.components.forEach(component => {
       componentsSection.innerHTML += `
         <div class="component">
-          <p><strong>BOM Reference:</strong> ${component['bom-ref']}</p>
-          <p><strong>Type:</strong> ${component.type}</p>
-          <p><strong>Group:</strong> ${component.group || "N/A"}</p>
-          <p><strong>Name:</strong> ${component.name}</p>
-          <p><strong>Version:</strong> ${component.version}</p>
-          <p><strong>PURL:</strong> ${component.purl || "N/A"}</p>
+          <div class="dropdown" onclick="toggleDropdown(this)">
+            <p><strong>Name:</strong> ${component.name} (v${component.version})</p>
+          </div>
+          <div class="dropdown-content">
+            <p><strong>BOM Reference:</strong> ${component['bom-ref']}</p>
+            <p><strong>Type:</strong> ${component.type}</p>
+            ${component.group ? `<p><strong>Group:</strong> ${component.group}</p>` : ""}
+            <p><strong>PURL:</strong> ${component.purl || "N/A"}</p>
+          </div>
         </div>
       `;
     });
 
-    // Display dependencies
+    // Display dependencies with count and dropdown
     dependenciesSection.innerHTML = `<h2>Dependencies</h2>`;
     data.dependencies.forEach(dependency => {
       dependenciesSection.innerHTML += `
         <div class="dependency">
-          <p><strong>Component Reference:</strong> ${dependency.ref}</p>
-          <p><strong>Depends On:</strong></p>
-          <ul>
-            ${
-              dependency.dependsOn.length > 0
-              ? dependency.dependsOn.map(dep => `<li>${dep}</li>`).join('')
-              : '<li>None</li>'
-            }
-          </ul>
+          <div class="dropdown" onclick="toggleDropdown(this)">
+            <p><strong>Component Reference:</strong> ${dependency.ref}</p>
+            <p><strong>Total Dependencies:</strong> ${dependency.dependsOn.length}</p>
+          </div>
+          <div class="dropdown-content">
+            <p><strong>Depends On:</strong></p>
+            <ul>
+              ${
+                dependency.dependsOn.length > 0
+                ? dependency.dependsOn.map(dep => `<li>${dep}</li>`).join('')
+                : '<li>None</li>'
+              }
+            </ul>
+          </div>
         </div>
       `;
     });
+  }
+
+  // Toggle dropdown content visibility
+  function toggleDropdown(element) {
+    const content = element.nextElementSibling;
+    content.style.display = content.style.display === "block" ? "none" : "block";
   }
 </script>
 </body>
