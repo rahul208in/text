@@ -10,15 +10,18 @@
     .container { max-width: 800px; margin: auto; }
     .section { margin-bottom: 20px; }
     h2 { color: #333; border-bottom: 2px solid #333; padding-bottom: 5px; }
-    .summary-box { background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+    .summary-box { background: #f1f1f1; border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; text-align: center; font-weight: bold; display: flex; justify-content: space-around; }
+    .summary-item { padding: 10px; border-radius: 5px; }
+    .high-count { background-color: #d9534f; color: #fff; }
+    .medium-count { background-color: #f39c12; color: #fff; }
+    .low-count { background-color: #ffc107; color: #333; }
     .vulnerability { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9; border-radius: 5px; }
     .dropdown { cursor: pointer; padding: 8px; background-color: #eee; border-radius: 5px; margin-bottom: 5px; font-weight: bold; }
     .dropdown-content { display: none; padding: 10px; }
     .dropdown:hover { background-color: #ddd; }
-    .critical { color: #a94442; }
-    .high { color: #e67e22; }
+    .high { color: #d9534f; }
     .medium { color: #f39c12; }
-    .low { color: #5bc0de; }
+    .low { color: #ffc107; }
   </style>
 </head>
 <body>
@@ -29,6 +32,9 @@
   <!-- Input section for Snyk JSON file -->
   <input type="file" id="fileInput" accept=".json">
   <button onclick="loadReport()">Load Report</button>
+
+  <!-- Summary Section -->
+  <div id="summary" class="summary-box"></div>
 
   <!-- Vulnerabilities Section -->
   <div id="vulnerabilities" class="section"></div>
@@ -53,6 +59,26 @@
 
   function displayReport(data) {
     const vulnerabilitiesSection = document.getElementById("vulnerabilities");
+    const summarySection = document.getElementById("summary");
+
+    let highCount = 0;
+    let mediumCount = 0;
+    let lowCount = 0;
+
+    // Count vulnerabilities by severity
+    data.vulnerabilities.forEach(vuln => {
+      if (vuln.severity === "high") highCount++;
+      else if (vuln.severity === "medium") mediumCount++;
+      else if (vuln.severity === "low") lowCount++;
+    });
+
+    // Display summary
+    summarySection.innerHTML = `
+      <div class="summary-item high-count">High: ${highCount}</div>
+      <div class="summary-item medium-count">Medium: ${mediumCount}</div>
+      <div class="summary-item low-count">Low: ${lowCount}</div>
+      <div class="summary-item">Total: ${highCount + mediumCount + lowCount}</div>
+    `;
 
     // Display vulnerabilities with dropdown for details
     vulnerabilitiesSection.innerHTML = `<h2>Vulnerabilities</h2>`;
@@ -97,10 +123,14 @@
               }
             </ul>
 
-            <p><strong>References:</strong></p>
-            <ul>
-              ${vuln.references ? vuln.references.map(ref => `<li><a href="${ref.url}" target="_blank">${ref.title || ref.url}</a></li>`).join('') : '<li>N/A</li>'}
-            </ul>
+            <div class="dropdown" onclick="toggleDropdown(this)">
+              <p><strong>References:</strong> (click to expand)</p>
+            </div>
+            <div class="dropdown-content">
+              <ul>
+                ${vuln.references ? vuln.references.map(ref => `<li><a href="${ref.url}" target="_blank">${ref.title || ref.url}</a></li>`).join('') : '<li>N/A</li>'}
+              </ul>
+            </div>
           </div>
         </div>
       `;
