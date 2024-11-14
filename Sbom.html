@@ -11,14 +11,14 @@
     .section { margin-bottom: 20px; }
     h2 { color: #333; border-bottom: 2px solid #333; padding-bottom: 5px; }
     pre { background: #f4f4f4; padding: 10px; border: 1px solid #ddd; overflow: auto; }
-    .component { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    .component, .dependency { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
     .external-ref { margin-left: 20px; font-style: italic; }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>CycloneDX SBOM Viewer</h1>
+  <h1>CycloneDX SBOM Viewer (Schema 1.4)</h1>
 
   <!-- Input section for SBOM JSON file -->
   <input type="file" id="fileInput" accept=".json">
@@ -29,6 +29,12 @@
 
   <!-- Components Section -->
   <div id="components" class="section"></div>
+
+  <!-- Dependencies Section -->
+  <div id="dependencies" class="section"></div>
+
+  <!-- Vulnerabilities Section -->
+  <div id="vulnerabilities" class="section"></div>
 </div>
 
 <script>
@@ -51,6 +57,8 @@
   function displaySBOM(data) {
     const bomInfo = document.getElementById("bomInfo");
     const componentsSection = document.getElementById("components");
+    const dependenciesSection = document.getElementById("dependencies");
+    const vulnerabilitiesSection = document.getElementById("vulnerabilities");
 
     // Display general BOM info
     bomInfo.innerHTML = `
@@ -59,16 +67,30 @@
       <p><strong>Spec Version:</strong> ${data.specVersion}</p>
       <p><strong>Serial Number:</strong> ${data.serialNumber}</p>
       <p><strong>Version:</strong> ${data.version}</p>
-      <p><strong>Timestamp:</strong> ${data.metadata.timestamp}</p>
+      <p><strong>Timestamp:</strong> ${data.metadata?.timestamp || "N/A"}</p>
     `;
 
-    // Display metadata (tools and main component info)
+    // Display metadata tools
     if (data.metadata && data.metadata.tools) {
       data.metadata.tools.forEach(tool => {
         bomInfo.innerHTML += `
           <p><strong>Tool:</strong> ${tool.vendor} ${tool.name} (v${tool.version})</p>
         `;
       });
+    }
+
+    // Display metadata component
+    if (data.metadata && data.metadata.component) {
+      const component = data.metadata.component;
+      bomInfo.innerHTML += `
+        <h3>Main Component</h3>
+        <p><strong>Name:</strong> ${component.name}</p>
+        <p><strong>Version:</strong> ${component.version}</p>
+        <p><strong>Type:</strong> ${component.type}</p>
+        <p><strong>Description:</strong> ${component.description || "N/A"}</p>
+        <p><strong>License:</strong> ${component.licenses?.[0]?.license?.id || "N/A"}</p>
+        <p><strong>PURL:</strong> ${component.purl}</p>
+      `;
     }
 
     // Display components
@@ -80,7 +102,7 @@
           <p><strong>Description:</strong> ${component.description || "N/A"}</p>
           <p><strong>Type:</strong> ${component.type}</p>
           <p><strong>License:</strong> ${component.licenses?.[0]?.license?.id || "N/A"}</p>
-          <p><strong>Package URL (PURL):</strong> ${component.purl}</p>
+          <p><strong>PURL:</strong> ${component.purl}</p>
           <h4>External References:</h4>
           <ul>
             ${
@@ -94,6 +116,42 @@
         </div>
       `;
     });
+
+    // Display dependencies
+    if (data.dependencies) {
+      dependenciesSection.innerHTML = `<h2>Dependencies</h2>`;
+      data.dependencies.forEach(dependency => {
+        dependenciesSection.innerHTML += `
+          <div class="dependency">
+            <p><strong>Component:</strong> ${dependency.ref}</p>
+            <p><strong>Depends on:</strong></p>
+            <ul>
+              ${
+                dependency.dependencies
+                ? dependency.dependencies.map(dep => `<li>${dep}</li>`).join('')
+                : '<li>None</li>'
+              }
+            </ul>
+          </div>
+        `;
+      });
+    }
+
+    // Display vulnerabilities (if present)
+    if (data.vulnerabilities) {
+      vulnerabilitiesSection.innerHTML = `<h2>Vulnerabilities</h2>`;
+      data.vulnerabilities.forEach(vuln => {
+        vulnerabilitiesSection.innerHTML += `
+          <div class="vulnerability">
+            <p><strong>ID:</strong> ${vuln.id}</p>
+            <p><strong>Description:</strong> ${vuln.description || "N/A"}</p>
+            <p><strong>Severity:</strong> ${vuln.ratings?.[0]?.severity || "N/A"}</p>
+            <p><strong>Score:</strong> ${vuln.ratings?.[0]?.score || "N/A"}</p>
+            <p><strong>CWE:</strong> ${vuln.cwe || "N/A"}</p>
+          </div>
+        `;
+      });
+    }
   }
 </script>
 </body>
