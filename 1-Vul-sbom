@@ -18,10 +18,11 @@
     .vulnerability { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9; border-radius: 5px; }
     .dropdown { cursor: pointer; padding: 8px; background-color: #eee; border-radius: 5px; margin-bottom: 5px; font-weight: bold; }
     .dropdown-content { display: none; padding: 10px; }
-    .dropdown:hover { background-color: #ddd; }
     .high { color: #d9534f; }
     .medium { color: #f39c12; }
     .low { color: #ffc107; }
+    .description { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+    .show-more { color: #007bff; cursor: pointer; font-weight: bold; text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -82,7 +83,7 @@
 
     // Display vulnerabilities with dropdown for details
     vulnerabilitiesSection.innerHTML = `<h2>Vulnerabilities</h2>`;
-    data.vulnerabilities.forEach(vuln => {
+    data.vulnerabilities.forEach((vuln, index) => {
       vulnerabilitiesSection.innerHTML += `
         <div class="vulnerability">
           <div class="dropdown ${vuln.severity}" onclick="toggleDropdown(this)">
@@ -99,13 +100,10 @@
             <p><strong>Exploit:</strong> ${vuln.exploit || "N/A"}</p>
             <p><strong>Fixed In:</strong> ${vuln.fixedIn ? vuln.fixedIn.join(", ") : "N/A"}</p>
             <p><strong>Credit:</strong> ${vuln.credit ? vuln.credit.join(", ") : "N/A"}</p>
-            
-            <div class="dropdown" onclick="toggleDropdown(this)">
-              <p><strong>Description:</strong> (click to expand)</p>
-            </div>
-            <div class="dropdown-content">
-              <p>${vuln.description || "N/A"}</p>
-            </div>
+
+            <p><strong>Description:</strong></p>
+            <p class="description" id="desc-${index}">${vuln.description || "N/A"}</p>
+            <span class="show-more" onclick="toggleDescription(${index})" id="toggle-${index}">Show more</span>
 
             <p><strong>Vulnerable Versions:</strong></p>
             <ul>
@@ -141,6 +139,23 @@
   function toggleDropdown(element) {
     const content = element.nextElementSibling;
     content.style.display = content.style.display === "block" ? "none" : "block";
+  }
+
+  // Toggle description visibility
+  function toggleDescription(index) {
+    const desc = document.getElementById(`desc-${index}`);
+    const toggle = document.getElementById(`toggle-${index}`);
+    if (toggle.textContent === "Show more") {
+      desc.style.display = "block";
+      desc.style.overflow = "visible";
+      desc.style.webkitLineClamp = "unset";
+      toggle.textContent = "Show less";
+    } else {
+      desc.style.display = "-webkit-box";
+      desc.style.overflow = "hidden";
+      desc.style.webkitLineClamp = 3;
+      toggle.textContent = "Show more";
+    }
   }
 </script>
 </body>
