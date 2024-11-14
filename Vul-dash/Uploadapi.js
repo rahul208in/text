@@ -19,7 +19,7 @@ export async function POST(req) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    const busboy = Busboy({ headers: req.headers });
+    const busboy = new Busboy({ headers: req.headers });
     let uploadFilePath = '';
 
     busboy.on('file', (fieldname, file, filename) => {
