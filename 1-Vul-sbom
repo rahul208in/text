@@ -86,6 +86,17 @@
               ${vuln.semver?.vulnerable ? vuln.semver.vulnerable.map(version => `<li>${version}</li>`).join('') : '<li>N/A</li>'}
             </ul>
 
+            <p><strong>Identifiers:</strong></p>
+            <ul>
+              ${
+                vuln.identifiers 
+                ? Object.keys(vuln.identifiers).map(idType => 
+                    vuln.identifiers[idType].map(id => `<li>${idType}: ${id}</li>`).join('')
+                  ).join('') 
+                : '<li>N/A</li>'
+              }
+            </ul>
+
             <p><strong>References:</strong></p>
             <ul>
               ${vuln.references ? vuln.references.map(ref => `<li><a href="${ref.url}" target="_blank">${ref.title || ref.url}</a></li>`).join('') : '<li>N/A</li>'}
