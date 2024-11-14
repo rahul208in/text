@@ -2,8 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { NextResponse } from 'next/server';
-import { IncomingForm } from 'formidable';
-import { Readable } from 'stream';
+import Busboy from 'busboy';
 
 export const config = {
   api: {
@@ -12,48 +11,44 @@ export const config = {
 };
 
 export async function POST(req) {
-  try {
-    // Convert Next.js request to a Readable stream
-    const stream = Readable.from(req.body);
-
-    const { fields, files } = await parseFormData(stream);
-
-    if (!files || !files.vulReport) {
-      return NextResponse.json({ error: 'File is required' }, { status: 400 });
-    }
-
-    // Define the upload directory
+  return new Promise((resolve, reject) => {
+    const busboy = new Busboy({ headers: req.headers });
     const uploadDir = path.join(process.cwd(), 'public', 'upload');
+
+    // Ensure upload directory exists
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    // Save the uploaded file to the upload directory
-    const file = files.vulReport[0];
-    const filePath = path.join(uploadDir, file.originalFilename);
-    fs.renameSync(file.filepath, filePath);
-
-    // Send success response
-    return NextResponse.json({ message: 'File uploaded successfully', filePath });
-  } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json({ error: 'File upload failed' }, { status: 500 });
-  }
-}
-
-// Helper function to parse form data
-function parseFormData(stream) {
-  return new Promise((resolve, reject) => {
-    const form = new IncomingForm();
-    form.uploadDir = path.join(process.cwd(), 'tmp'); // Temporary directory for file storage
-    form.keepExtensions = true;
-
-    form.parse(stream, (err, fields, files) => {
-      if (err) {
-        console.error("Form parse error:", err);
-        reject(err);
-      }
-      resolve({ fields, files });
+    let uploadFilePath = '';
+    busboy.on('file', (fieldname, file, filename) => {
+      uploadFilePath = path.join(uploadDir, filename);
+      const writeStream = fs.createWriteStream(uploadFilePath);
+      file.pipe(writeStream);
+      file.on('end', () => {
+        console.log(`File [${fieldname}] uploaded to ${uploadFilePath}`);
+      });
     });
+
+    busboy.on('finish', () => {
+      resolve(
+        NextResponse.json({
+          message: 'File uploaded successfully',
+          filePath: uploadFilePath,
+        })
+      );
+    });
+
+    busboy.on('error', (error) => {
+      console.error("Upload error:", error);
+      reject(
+        NextResponse.json(
+          { error: 'File upload failed', details: error.message },
+          { status: 500 }
+        )
+      );
+    });
+
+    req.body.pipe(busboy);
   });
 }
