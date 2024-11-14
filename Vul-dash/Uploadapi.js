@@ -12,7 +12,6 @@ export const config = {
 
 export async function POST(req) {
   return new Promise((resolve, reject) => {
-    const busboy = new Busboy({ headers: req.headers });
     const uploadDir = path.join(process.cwd(), 'public', 'upload');
 
     // Ensure upload directory exists
@@ -20,11 +19,14 @@ export async function POST(req) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
+    const busboy = Busboy({ headers: req.headers });
     let uploadFilePath = '';
+
     busboy.on('file', (fieldname, file, filename) => {
       uploadFilePath = path.join(uploadDir, filename);
       const writeStream = fs.createWriteStream(uploadFilePath);
       file.pipe(writeStream);
+
       file.on('end', () => {
         console.log(`File [${fieldname}] uploaded to ${uploadFilePath}`);
       });
