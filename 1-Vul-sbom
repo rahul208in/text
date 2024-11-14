@@ -67,18 +67,28 @@
           </div>
           <div class="dropdown-content">
             <p><strong>ID:</strong> ${vuln.id}</p>
-            <p><strong>Description:</strong> ${vuln.description || "N/A"}</p>
-            <p><strong>CVSSv3:</strong> ${vuln.CVSSv3 || "N/A"}</p>
+            <p><strong>Language:</strong> ${vuln.language || "N/A"}</p>
+            <p><strong>Malicious:</strong> ${vuln.malicious ? "Yes" : "No"}</p>
+            <p><strong>Is Disputed:</strong> ${vuln.isDisputed ? "Yes" : "No"}</p>
             <p><strong>Exploit:</strong> ${vuln.exploit || "N/A"}</p>
             <p><strong>Fixed In:</strong> ${vuln.fixedIn ? vuln.fixedIn.join(", ") : "N/A"}</p>
             <p><strong>Credit:</strong> ${vuln.credit ? vuln.credit.join(", ") : "N/A"}</p>
+            
+            <div class="dropdown" onclick="toggleDropdown(this)">
+              <p><strong>Description:</strong> (click to expand)</p>
+            </div>
+            <div class="dropdown-content">
+              <p>${vuln.description || "N/A"}</p>
+            </div>
+
             <p><strong>Vulnerable Versions:</strong></p>
             <ul>
               ${vuln.semver?.vulnerable ? vuln.semver.vulnerable.map(version => `<li>${version}</li>`).join('') : '<li>N/A</li>'}
             </ul>
+
             <p><strong>References:</strong></p>
             <ul>
-              ${vuln.references ? vuln.references.map(ref => `<li><a href="${ref}" target="_blank">${ref}</a></li>`).join('') : '<li>N/A</li>'}
+              ${vuln.references ? vuln.references.map(ref => `<li><a href="${ref.url}" target="_blank">${ref.title || ref.url}</a></li>`).join('') : '<li>N/A</li>'}
             </ul>
           </div>
         </div>
