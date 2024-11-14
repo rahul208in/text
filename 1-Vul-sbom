@@ -1,0 +1,113 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snyk Vulnerability Report Viewer</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .container { max-width: 800px; margin: auto; }
+    .section { margin-bottom: 20px; }
+    h2 { color: #333; border-bottom: 2px solid #333; padding-bottom: 5px; }
+    .summary-box { background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+    .issue { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9; border-radius: 5px; }
+    .dropdown { cursor: pointer; padding: 8px; background-color: #eee; border-radius: 5px; margin-bottom: 5px; font-weight: bold; }
+    .dropdown-content { display: none; padding: 10px; }
+    .dropdown:hover { background-color: #ddd; }
+    .critical { color: #a94442; }
+    .high { color: #e67e22; }
+    .medium { color: #f39c12; }
+    .low { color: #5bc0de; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Snyk Vulnerability Report Viewer</h1>
+
+  <!-- Input section for Snyk JSON file -->
+  <input type="file" id="fileInput" accept=".json">
+  <button onclick="loadReport()">Load Report</button>
+
+  <!-- Report Info Section -->
+  <div id="reportInfo" class="section"></div>
+
+  <!-- Issues Section -->
+  <div id="issues" class="section"></div>
+</div>
+
+<script>
+  function loadReport() {
+    const fileInput = document.getElementById("fileInput");
+    const file = fileInput.files[0];
+    if (!file) {
+      alert("Please select a file.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const data = JSON.parse(e.target.result);
+      displayReport(data);
+    };
+    reader.readAsText(file);
+  }
+
+  function displayReport(data) {
+    const reportInfo = document.getElementById("reportInfo");
+    const issuesSection = document.getElementById("issues");
+
+    // Display general report information
+    reportInfo.innerHTML = `
+      <h2>Report Information</h2>
+      <p><strong>Project Name:</strong> ${data.projectName || "N/A"}</p>
+      <p><strong>Organization:</strong> ${data.org || "N/A"}</p>
+      <p><strong>Project Type:</strong> ${data.projectType || "N/A"}</p>
+      <p><strong>Total Dependencies:</strong> ${data.totalDependencies || "N/A"}</p>
+      <p><strong>Total Issues:</strong> ${data.issues ? data.issues.length : "N/A"}</p>
+    `;
+
+    // Display issues with dropdown for details
+    issuesSection.innerHTML = `<h2>Issues</h2>`;
+    data.issues.forEach(issue => {
+      issuesSection.innerHTML += `
+        <div class="issue">
+          <div class="dropdown ${issue.severity}" onclick="toggleDropdown(this)">
+            <p><strong>Title:</strong> ${issue.title}</p>
+            <p><strong>Severity:</strong> <span class="${issue.severity}">${issue.severity}</span></p>
+            <p><strong>Package:</strong> ${issue.packageName}</p>
+          </div>
+          <div class="dropdown-content">
+            <p><strong>Description:</strong> ${issue.description || "N/A"}</p>
+            <p><strong>Identifiers:</strong></p>
+            <ul>
+              ${
+                issue.identifiers
+                ? Object.keys(issue.identifiers).map(idType => {
+                    return issue.identifiers[idType].map(id => `<li>${idType}: ${id}</li>`).join('');
+                  }).join('')
+                : '<li>N/A</li>'
+              }
+            </ul>
+            <p><strong>From:</strong> ${issue.from.join(" > ")}</p>
+            <p><strong>Introduced in Version:</strong> ${issue.version || "N/A"}</p>
+            <p><strong>Fixed in:</strong> ${issue.fixedIn ? issue.fixedIn.join(", ") : "N/A"}</p>
+            <p><strong>References:</strong></p>
+            <ul>
+              ${issue.references ? issue.references.map(ref => `<li><a href="${ref}" target="_blank">${ref}</a></li>`).join('') : '<li>N/A</li>'}
+            </ul>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  // Toggle dropdown content visibility
+  function toggleDropdown(element) {
+    const content = element.nextElementSibling;
+    content.style.display = content.style.display === "block" ? "none" : "block";
+  }
+</script>
+</body>
+</html>
