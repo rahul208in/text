@@ -11,7 +11,7 @@
     .section { margin-bottom: 20px; }
     h2 { color: #333; border-bottom: 2px solid #333; padding-bottom: 5px; }
     .summary-box { background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; text-align: center; font-weight: bold; }
-    .issue { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9; border-radius: 5px; }
+    .vulnerability { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background-color: #f9f9f9; border-radius: 5px; }
     .dropdown { cursor: pointer; padding: 8px; background-color: #eee; border-radius: 5px; margin-bottom: 5px; font-weight: bold; }
     .dropdown-content { display: none; padding: 10px; }
     .dropdown:hover { background-color: #ddd; }
@@ -30,11 +30,8 @@
   <input type="file" id="fileInput" accept=".json">
   <button onclick="loadReport()">Load Report</button>
 
-  <!-- Report Info Section -->
-  <div id="reportInfo" class="section"></div>
-
-  <!-- Issues Section -->
-  <div id="issues" class="section"></div>
+  <!-- Vulnerabilities Section -->
+  <div id="vulnerabilities" class="section"></div>
 </div>
 
 <script>
@@ -55,47 +52,33 @@
   }
 
   function displayReport(data) {
-    const reportInfo = document.getElementById("reportInfo");
-    const issuesSection = document.getElementById("issues");
+    const vulnerabilitiesSection = document.getElementById("vulnerabilities");
 
-    // Display general report information
-    reportInfo.innerHTML = `
-      <h2>Report Information</h2>
-      <p><strong>Project Name:</strong> ${data.projectName || "N/A"}</p>
-      <p><strong>Organization:</strong> ${data.org || "N/A"}</p>
-      <p><strong>Project Type:</strong> ${data.projectType || "N/A"}</p>
-      <p><strong>Total Dependencies:</strong> ${data.totalDependencies || "N/A"}</p>
-      <p><strong>Total Issues:</strong> ${data.issues ? data.issues.length : "N/A"}</p>
-    `;
-
-    // Display issues with dropdown for details
-    issuesSection.innerHTML = `<h2>Issues</h2>`;
-    data.issues.forEach(issue => {
-      issuesSection.innerHTML += `
-        <div class="issue">
-          <div class="dropdown ${issue.severity}" onclick="toggleDropdown(this)">
-            <p><strong>Title:</strong> ${issue.title}</p>
-            <p><strong>Severity:</strong> <span class="${issue.severity}">${issue.severity}</span></p>
-            <p><strong>Package:</strong> ${issue.packageName}</p>
+    // Display vulnerabilities with dropdown for details
+    vulnerabilitiesSection.innerHTML = `<h2>Vulnerabilities</h2>`;
+    data.vulnerabilities.forEach(vuln => {
+      vulnerabilitiesSection.innerHTML += `
+        <div class="vulnerability">
+          <div class="dropdown ${vuln.severity}" onclick="toggleDropdown(this)">
+            <p><strong>Title:</strong> ${vuln.title}</p>
+            <p><strong>Severity:</strong> <span class="${vuln.severity}">${vuln.severity}</span></p>
+            <p><strong>Module Name:</strong> ${vuln.moduleName}</p>
+            <p><strong>CVSS Score:</strong> ${vuln.cvssScore || "N/A"}</p>
           </div>
           <div class="dropdown-content">
-            <p><strong>Description:</strong> ${issue.description || "N/A"}</p>
-            <p><strong>Identifiers:</strong></p>
+            <p><strong>ID:</strong> ${vuln.id}</p>
+            <p><strong>Description:</strong> ${vuln.description || "N/A"}</p>
+            <p><strong>CVSSv3:</strong> ${vuln.CVSSv3 || "N/A"}</p>
+            <p><strong>Exploit:</strong> ${vuln.exploit || "N/A"}</p>
+            <p><strong>Fixed In:</strong> ${vuln.fixedIn ? vuln.fixedIn.join(", ") : "N/A"}</p>
+            <p><strong>Credit:</strong> ${vuln.credit ? vuln.credit.join(", ") : "N/A"}</p>
+            <p><strong>Vulnerable Versions:</strong></p>
             <ul>
-              ${
-                issue.identifiers
-                ? Object.keys(issue.identifiers).map(idType => {
-                    return issue.identifiers[idType].map(id => `<li>${idType}: ${id}</li>`).join('');
-                  }).join('')
-                : '<li>N/A</li>'
-              }
+              ${vuln.semver?.vulnerable ? vuln.semver.vulnerable.map(version => `<li>${version}</li>`).join('') : '<li>N/A</li>'}
             </ul>
-            <p><strong>From:</strong> ${issue.from.join(" > ")}</p>
-            <p><strong>Introduced in Version:</strong> ${issue.version || "N/A"}</p>
-            <p><strong>Fixed in:</strong> ${issue.fixedIn ? issue.fixedIn.join(", ") : "N/A"}</p>
             <p><strong>References:</strong></p>
             <ul>
-              ${issue.references ? issue.references.map(ref => `<li><a href="${ref}" target="_blank">${ref}</a></li>`).join('') : '<li>N/A</li>'}
+              ${vuln.references ? vuln.references.map(ref => `<li><a href="${ref}" target="_blank">${ref}</a></li>`).join('') : '<li>N/A</li>'}
             </ul>
           </div>
         </div>
