@@ -1,7 +1,9 @@
+
 "use client";
 
 import { useState } from 'react';
-import Papa from 'papaparse'; // Import papaparse library for robust CSV parsing
+import Image from 'next/image'; // Import Next.js Image component
+import scrn from './scrn.png'; // Import the screenshot from the same folder
 
 export default function Home() {
   const [file, setFile] = useState(null);
@@ -104,8 +106,8 @@ export default function Home() {
     <div style={{ fontFamily: 'Arial, sans-serif', padding: '20px' }}>
       {showScreenshot && (
         <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <img
-            src="/info-screenshot.png" // Replace with your screenshot path
+          <Image
+            src={scrn} // Use imported screenshot
             alt="Information Screenshot"
             style={{ maxWidth: '100%', border: '1px solid #ddd', borderRadius: '8px' }}
           />
