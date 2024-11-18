@@ -17,6 +17,9 @@ export default function Home() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Hide the screenshot when the button is clicked
+    setShowScreenshot(false);
+
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -104,29 +107,6 @@ export default function Home() {
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', padding: '20px' }}>
-      {showScreenshot && (
-        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <Image
-            src={scrn} // Use imported screenshot
-            alt="Information Screenshot"
-            style={{ maxWidth: '100%', border: '1px solid #ddd', borderRadius: '8px' }}
-          />
-          <button
-            onClick={() => setShowScreenshot(false)}
-            style={{
-              marginTop: '10px',
-              padding: '8px 16px',
-              backgroundColor: '#4CAF50',
-              color: 'white',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            Got it
-          </button>
-        </div>
-      )}
-
       <h1>Convert JSON to CSV</h1>
       <form onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
         <input
@@ -156,6 +136,17 @@ export default function Home() {
           Convert to CSV
         </button>
       </form>
+
+      {showScreenshot && (
+        <div style={{ marginTop: '20px', textAlign: 'center' }}>
+          <h2>Information Screenshot</h2>
+          <Image
+            src={scrn} // Use imported screenshot
+            alt="Information Screenshot"
+            style={{ maxWidth: '100%', border: '1px solid #ddd', borderRadius: '8px' }}
+          />
+        </div>
+      )}
 
       {csvData.length > 0 && (
         <div>
