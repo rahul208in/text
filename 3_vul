@@ -1,0 +1,175 @@
+"use client";
+
+import { useState } from 'react';
+import Papa from 'papaparse'; // Import papaparse library for robust CSV parsing
+
+export default function Home() {
+  const [file, setFile] = useState(null);
+  const [param1, setParam1] = useState('');
+  const [param2, setParam2] = useState('');
+  const [csvData, setCsvData] = useState([]);
+  const [csvLink, setCsvLink] = useState(null);
+  const [expandedRow, setExpandedRow] = useState(null);
+  const [showScreenshot, setShowScreenshot] = useState(true); // State to control screenshot visibility
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('param1', param1);
+      formData.append('param2', param2);
+
+      const response = await fetch('/api/convert', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(`Error: ${error.error}`);
+        return;
+      }
+
+      const csv = await response.text();
+      parseCsvData(csv);
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      setCsvLink(url);
+    } catch (error) {
+      console.error('Error during form submission:', error);
+      alert('An unexpected error occurred. Please try again.');
+    }
+  };
+
+  const parseCsvData = (csv) => {
+    Papa.parse(csv, {
+      header: false,
+      skipEmptyLines: true,
+      complete: (result) => {
+        setCsvData(result.data);
+      },
+    });
+  };
+
+  const renderCsvTable = () => {
+    const headers = csvData[0] || [];
+    const dataRows = csvData.slice(1);
+
+    return (
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <thead>
+          <tr>
+            {headers.map((header, index) => (
+              <th key={index} style={{ border: '1px solid #ddd', padding: '8px', backgroundColor: '#f2f2f2' }}>
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataRows.map((cells, rowIndex) => (
+            <tr
+              key={rowIndex}
+              onClick={() => setExpandedRow(expandedRow === rowIndex ? null : rowIndex)}
+              style={{
+                cursor: 'pointer',
+                backgroundColor: expandedRow === rowIndex ? '#eef2ff' : 'white',
+              }}
+            >
+              {cells.map((cell, cellIndex) => (
+                <td
+                  key={cellIndex}
+                  style={{
+                    border: '1px solid #ddd',
+                    padding: '8px',
+                    overflow: 'hidden',
+                    whiteSpace: expandedRow === rowIndex ? 'normal' : 'nowrap',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {expandedRow === rowIndex ? cell : cell.slice(0, 20) + (cell.length > 20 ? '...' : '')}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
+  return (
+    <div style={{ fontFamily: 'Arial, sans-serif', padding: '20px' }}>
+      {showScreenshot && (
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+          <img
+            src="/info-screenshot.png" // Replace with your screenshot path
+            alt="Information Screenshot"
+            style={{ maxWidth: '100%', border: '1px solid #ddd', borderRadius: '8px' }}
+          />
+          <button
+            onClick={() => setShowScreenshot(false)}
+            style={{
+              marginTop: '10px',
+              padding: '8px 16px',
+              backgroundColor: '#4CAF50',
+              color: 'white',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            Got it
+          </button>
+        </div>
+      )}
+
+      <h1>Convert JSON to CSV</h1>
+      <form onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
+        <input
+          type="text"
+          placeholder="Parameter 1"
+          value={param1}
+          onChange={(e) => setParam1(e.target.value)}
+          required
+          style={{ marginRight: '10px', padding: '8px' }}
+        />
+        <input
+          type="text"
+          placeholder="Parameter 2"
+          value={param2}
+          onChange={(e) => setParam2(e.target.value)}
+          required
+          style={{ marginRight: '10px', padding: '8px' }}
+        />
+        <input
+          type="file"
+          accept=".json"
+          onChange={(e) => setFile(e.target.files[0])}
+          required
+          style={{ marginRight: '10px', padding: '8px' }}
+        />
+        <button type="submit" style={{ padding: '8px 16px', backgroundColor: '#4CAF50', color: 'white', border: 'none' }}>
+          Convert to CSV
+        </button>
+      </form>
+
+      {csvData.length > 0 && (
+        <div>
+          <h2>CSV Data</h2>
+          <div style={{ overflowX: 'auto', marginBottom: '10px' }}>
+            {renderCsvTable()}
+          </div>
+          <a
+            href={csvLink}
+            download="vulnerabilities.csv"
+            style={{ display: 'inline-block', padding: '8px 16px', backgroundColor: '#007bff', color: 'white', textDecoration: 'none', borderRadius: '4px' }}
+          >
+            Download CSV
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
