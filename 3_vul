@@ -2,8 +2,7 @@
 "use client";
 
 import { useState } from 'react';
-import Image from 'next/image'; // Import Next.js Image component
-import scrn from './scrn.png'; // Import the screenshot from the same folder
+import Papa from 'papaparse'; // Import papaparse library for robust CSV parsing
 
 export default function Home() {
   const [file, setFile] = useState(null);
@@ -12,14 +11,15 @@ export default function Home() {
   const [csvData, setCsvData] = useState([]);
   const [csvLink, setCsvLink] = useState(null);
   const [expandedRow, setExpandedRow] = useState(null);
-  const [showScreenshot, setShowScreenshot] = useState(true); // State to control screenshot visibility
+  const [showTutorial, setShowTutorial] = useState(true); // State to control tutorial visibility
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Hide the screenshot when the button is clicked
-    setShowScreenshot(false);
+    // Hide the tutorial when the button is clicked
+    setShowTutorial(false);
 
+    // Proceed with JSON-to-CSV processing
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -137,14 +137,18 @@ export default function Home() {
         </button>
       </form>
 
-      {showScreenshot && (
+      {showTutorial && (
         <div style={{ marginTop: '20px', textAlign: 'center' }}>
-          <h2>Information Screenshot</h2>
-          <Image
-            src={scrn} // Use imported screenshot
-            alt="Information Screenshot"
+          <h2>Video Tutorial</h2>
+          <video
+            src="/app/vul/tutorial.mov" // Replace with the correct path to your .mov file
+            controls
+            autoPlay
+            loop
             style={{ maxWidth: '100%', border: '1px solid #ddd', borderRadius: '8px' }}
-          />
+          >
+            Your browser does not support the video tag.
+          </video>
         </div>
       )}
 
