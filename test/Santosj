@@ -1,0 +1,83 @@
+"use client";
+
+import { useState } from "react";
+
+export default function InputPage() {
+  const [id, setId] = useState("");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setData(null);
+
+    try {
+      const response = await fetch(`/api/data/${id}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch data. Please check the ID.");
+      }
+      const result = await response.json();
+      setData(result);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto" }}>
+      <h1>Fetch Data by ID</h1>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: "10px" }}>
+          <label htmlFor="id">Enter ID: </label>
+          <input
+            type="text"
+            id="id"
+            value={id}
+            onChange={(e) => setId(e.target.value)}
+            required
+            style={{ padding: "5px", width: "100%" }}
+          />
+        </div>
+        <button type="submit" style={{ padding: "10px 20px" }}>Submit</button>
+      </form>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      {data && (
+        <div style={{ marginTop: "20px" }}>
+          <h2>Data for ID: {id}</h2>
+          <pre style={{ background: "#f4f4f4", padding: "10px" }}>
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+
+
+
+export async function GET(req, { params }) {
+  const { id } = params;
+
+  // Sample data stored in a dictionary
+  const dataDictionary = {
+    "1": { name: "John Doe", age: 30, occupation: "Engineer" },
+    "2": { name: "Jane Smith", age: 25, occupation: "Designer" },
+    "3": { name: "Sam Wilson", age: 35, occupation: "Manager" },
+  };
+
+  // Return data if ID exists, otherwise return 404
+  if (dataDictionary[id]) {
+    return new Response(JSON.stringify(dataDictionary[id]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } else {
+    return new Response(JSON.stringify({ error: "ID not found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
