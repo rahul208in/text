@@ -1,160 +1,144 @@
 
-The folder you have for the `gte-large` model contains all the necessary files to load the model locally. These files are typical for Hugging Face models and include:
-
-1. **`config.json`**: Configuration file for the model architecture.
-2. **`pytorch_model.bin`**: The actual model weights.
-3. **`tokenizer_config.json`**: Configuration for the tokenizer.
-4. **`vocab.txt`**: Vocabulary file for the tokenizer.
-5. **`sentence_bert_config.json`**: Configuration specific to Sentence-BERT models.
-6. **Other files**: Supporting files like `special_tokens_map.json`, `data.pkl`, etc.
-
-You can load this model locally using the `SentenceTransformer` class from the `sentence-transformers` library. Here's how you can do it:
+Great! Since the GTE-Large setup is successful, we can move to the next step in your project. Based on the architecture we discussed earlier, the next step is **storing the embeddings in a vector database (ChromaDB)**.
 
 ---
 
-### **Steps to Use the Local GTE-Large Model**
+### **Step 4: Storing Embeddings in ChromaDB**
 
-1. **Ensure the `sentence-transformers` library is installed**:
-   If it's not already installed in your environment, ensure it's available in your intranet artifactory and install it:
-   ```bash
-   pip install sentence-transformers
-   ```
-
-2. **Update the Path to Your Local Model**:
-   Use the path to the folder containing the files (e.g., `/path/to/gte-large`).
-
-3. **Load the Model Locally**:
-   Modify your embedding handler to load the model from the local folder.
+Now that you have successfully generated embeddings for your documents, the next step is to store these embeddings in a vector database for efficient querying. ChromaDB is a great choice for this purpose.
 
 ---
 
-### **Code to Load and Use the Local GTE-Large Model**
+### **What We'll Do in This Step**
+1. **Set up ChromaDB**: Install and initialize ChromaDB.
+2. **Create a ChromaDB Collection**: A collection is where embeddings and metadata are stored.
+3. **Store Embeddings**: Insert the document embeddings and metadata into the ChromaDB collection.
 
-Here’s the updated `GTEEmbeddingHandler` class:
+---
 
-```python
-from sentence_transformers import SentenceTransformer
-from typing import List, Dict
-from pathlib import Path
-from loguru import logger
-from langchain.schema import Document
-
-class GTEEmbeddingHandler:
-    """
-    Handles document embedding using GTE-Large model locally
-    """
-    def __init__(self,
-                 model_path: str = "/path/to/gte-large",  # Update this path
-                 cache_dir: str = "cache/embeddings"):
-        """
-        Initialize the GTEEmbeddingHandler.
-
-        Args:
-            model_path (str): Path to the local GTE-Large model files
-            cache_dir (str): Directory to store embedding cache
-        """
-        try:
-            self.model = SentenceTransformer(model_path)
-            self.cache_dir = Path(cache_dir)
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Initialized GTE-Large embedding model from: {model_path}")
-        except Exception as e:
-            logger.error(f"Error loading model: {str(e)}")
-            raise
-
-    def get_embedding(self, text: str) -> List[float]:
-        """
-        Get embedding for a text using GTE-Large
-        """
-        try:
-            embedding = self.model.encode(text)
-            return embedding.tolist()
-        except Exception as e:
-            logger.error(f"Error getting embedding: {str(e)}")
-            raise
-
-    def embed_documents(self, documents: List[Document]) -> List[Dict]:
-        """
-        Embed a list of documents.
-        """
-        embedded_documents = []
-        for doc in documents:
-            try:
-                embedding = self.get_embedding(doc.page_content)
-                embedded_doc = {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata,
-                    "embedding": embedding
-                }
-                embedded_documents.append(embedded_doc)
-                logger.info(f"Successfully embedded document: {doc.metadata.get('file_name')}")
-            except Exception as e:
-                logger.error(f"Error embedding document {doc.metadata.get('file_name')}: {str(e)}")
-
-        return embedded_documents
+### **1. Install ChromaDB**
+If you haven't already installed ChromaDB, you can do so using pip:
+```bash
+pip install chromadb
 ```
 
 ---
 
-### **Test Script**
+### **2. Initialize ChromaDB and Create a Collection**
 
-Here’s how you can test the embedding handler with your local GTE-Large model:
+Here’s how you can set up ChromaDB and create a collection for storing embeddings:
+
+```python
+import chromadb
+from chromadb.config import Settings
+
+# Initialize ChromaDB client
+client = chromadb.Client(Settings(
+    persist_directory="chroma_db",  # Directory to store the database
+    chroma_db_impl="duckdb+parquet",  # Use DuckDB with Parquet for storage
+))
+
+# Create a collection (or get an existing one)
+collection_name = "document_embeddings"
+collection = client.get_or_create_collection(name=collection_name)
+```
+
+---
+
+### **3. Store Embeddings in ChromaDB**
+
+You can now store the embeddings and metadata in the ChromaDB collection. Here's an example:
+
+```python
+def store_embeddings_in_chromadb(embedded_docs, collection):
+    """
+    Store document embeddings and metadata in ChromaDB.
+
+    Args:
+        embedded_docs (list): List of embedded documents with metadata.
+        collection: ChromaDB collection object.
+    """
+    for doc in embedded_docs:
+        collection.add(
+            documents=[doc["content"]],
+            metadatas=[doc["metadata"]],
+            ids=[doc["metadata"]["file_name"]],  # Use file name as the unique ID
+            embeddings=[doc["embedding"]]
+        )
+    print(f"Stored {len(embedded_docs)} documents in ChromaDB.")
+
+# Example usage
+store_embeddings_in_chromadb(embedded_docs, collection)
+```
+
+---
+
+### **4. Verify Stored Data**
+
+You can verify that the embeddings and metadata have been stored correctly by querying the collection:
+
+```python
+# Retrieve all documents in the collection
+results = collection.get()
+print(f"Number of documents in collection: {len(results['documents'])}")
+for doc, metadata in zip(results["documents"], results["metadatas"]):
+    print(f"Document: {doc}")
+    print(f"Metadata: {metadata}")
+    print("-" * 50)
+```
+
+---
+
+### **5. Test Script**
+
+Here’s a complete test script for this step:
 
 ```python
 from app.ingestion.ingestion import DataIngestion
 from app.embedding.gte_embedding import GTEEmbeddingHandler
+import chromadb
+from chromadb.config import Settings
 
-def test_gte_embedding():
-    # Initialize DataIngestion
+def test_chromadb_storage():
+    # Step 1: Load documents
     folder_path = "data/json_files/"
     ingestion = DataIngestion(folder_path)
-
-    # Load documents
     documents = ingestion.load_json_files()
 
-    # Initialize GTEEmbeddingHandler
-    embedding_handler = GTEEmbeddingHandler(model_path="/path/to/gte-large")  # Update the path
-
-    # Embed documents
+    # Step 2: Generate embeddings
+    embedding_handler = GTEEmbeddingHandler(model_path="/path/to/gte-large")
     embedded_docs = embedding_handler.embed_documents(documents)
 
-    # Print results
+    # Step 3: Initialize ChromaDB
+    client = chromadb.Client(Settings(
+        persist_directory="chroma_db",
+        chroma_db_impl="duckdb+parquet",
+    ))
+    collection = client.get_or_create_collection(name="document_embeddings")
+
+    # Step 4: Store embeddings in ChromaDB
     for doc in embedded_docs:
-        print(f"File: {doc['metadata']['file_name']}")
-        print(f"Embedding length: {len(doc['embedding'])}")
-        print(f"First few dimensions: {doc['embedding'][:5]}")  # Print first 5 dimensions
+        collection.add(
+            documents=[doc["content"]],
+            metadatas=[doc["metadata"]],
+            ids=[doc["metadata"]["file_name"]],
+            embeddings=[doc["embedding"]]
+        )
+    print(f"Stored {len(embedded_docs)} documents in ChromaDB.")
+
+    # Step 5: Verify stored data
+    results = collection.get()
+    print(f"Number of documents in collection: {len(results['documents'])}")
+    for doc, metadata in zip(results["documents"], results["metadatas"]):
+        print(f"Document: {doc}")
+        print(f"Metadata: {metadata}")
         print("-" * 50)
 
 if __name__ == "__main__":
-    test_gte_embedding()
+    test_chromadb_storage()
 ```
 
 ---
 
-### **Expected Output**
-
-For each document, you should see:
-- The file name
-- The length of the embedding vector (should be 1024 for GTE-Large)
-- The first few dimensions of the embedding vector
-
-Example:
-```
-File: file1.json
-Embedding length: 1024
-First few dimensions: [0.123, -0.456, 0.789, -0.101, 0.112]
---------------------------------------------------
-File: file2.json
-Embedding length: 1024
-First few dimensions: [0.234, -0.567, 0.890, -0.202, 0.223]
---------------------------------------------------
-```
-
----
-
-### **Key Points**
-1. Ensure the `model_path` points to the folder containing the GTE-Large files.
-2. The `SentenceTransformer` class will automatically load the model from the local folder.
-3. The embeddings generated will be 1024-dimensional vectors.
-
-Let me know if you encounter any issues or need further assistance!
+### **Next Steps**
+Once the embeddings are successfully stored in ChromaDB, the next step will be **querying the vector database** to retrieve relevant documents based on user input. Let me know when you're ready to proceed!
