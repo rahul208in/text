@@ -1,93 +1,49 @@
-Let's implement the SentenceTransformers approach for local embeddings. First, install the required package:
 
-```bash
-pip install sentence-transformers
-```
-
-Here's the updated embedding handler implementation:
+For an offline environment, let's use a simpler embedding approach that doesn't require downloading models. We'll use scikit-learn's TF-IDF vectorizer which works completely offline:
 
 ```python
-# app/embedding/local_embedding.py
+# app/embedding/offline_embedding.py
 
-import torch
-from pathlib import Path
+from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Dict
-from sentence_transformers import SentenceTransformer
+from pathlib import Path
 from loguru import logger
 from langchain.schema import Document
 import pickle
 import hashlib
 
-class LocalEmbeddingHandler:
+class OfflineEmbeddingHandler:
     """
-    Handles document embedding using SentenceTransformers locally
+    Handles document embedding using TF-IDF vectorizer for offline environments
     """
-    def __init__(self, 
-                 model_name: str = 'all-MiniLM-L6-v2',
-                 cache_dir: str = "cache/embeddings"):
+    def __init__(self, cache_dir: str = "cache/embeddings"):
         """
-        Initialize the LocalEmbeddingHandler.
-
-        Args:
-            model_name (str): Name of the SentenceTransformer model to use
-            cache_dir (str): Directory to store embedding cache
+        Initialize the OfflineEmbeddingHandler.
         """
-        self.model = SentenceTransformer(model_name)
+        self.vectorizer = TfidfVectorizer(
+            max_features=1024,  # Limit vocabulary size
+            stop_words='english'  # Remove common English words
+        )
+        self.is_fitted = False
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Initialized local embedding model: {model_name}")
-        
-    def _get_cache_key(self, text: str) -> str:
-        """Generate a cache key for a given text"""
-        return hashlib.sha256(text.encode()).hexdigest()
+        logger.info("Initialized offline embedding handler")
 
-    def _get_from_cache(self, cache_key: str) -> List[float] | None:
-        """Retrieve embedding from cache if it exists"""
-        cache_file = self.cache_dir / f"{cache_key}.pkl"
-        if cache_file.exists():
-            try:
-                with open(cache_file, 'rb') as f:
-                    return pickle.load(f)
-            except Exception as e:
-                logger.error(f"Error loading cache: {str(e)}")
-                return None
-        return None
-
-    def _save_to_cache(self, cache_key: str, embedding: List[float]) -> None:
-        """Save embedding to cache"""
-        cache_file = self.cache_dir / f"{cache_key}.pkl"
-        try:
-            with open(cache_file, 'wb') as f:
-                pickle.dump(embedding, f)
-        except Exception as e:
-            logger.error(f"Error saving to cache: {str(e)}")
+    def _fit_vectorizer(self, texts: List[str]):
+        """Fit the vectorizer on a collection of texts"""
+        self.vectorizer.fit(texts)
+        self.is_fitted = True
 
     def get_embedding(self, text: str) -> List[float]:
         """
-        Get embedding for a text, using cache if available.
-
-        Args:
-            text (str): Text to get embedding for
-
-        Returns:
-            List[float]: Embedding vector
+        Get embedding for a text using TF-IDF
         """
-        cache_key = self._get_cache_key(text)
-        cached_embedding = self._get_from_cache(cache_key)
-
-        if cached_embedding is not None:
-            logger.info("Using cached embedding")
-            return cached_embedding
-
+        if not self.is_fitted:
+            self._fit_vectorizer([text])
+        
         try:
-            # Convert text to embedding using SentenceTransformer
-            embedding = self.model.encode(text)
-            embedding_list = embedding.tolist()
-            
-            # Save to cache
-            self._save_to_cache(cache_key, embedding_list)
-            
-            return embedding_list
+            embedding = self.vectorizer.transform([text]).toarray()[0]
+            return embedding.tolist()
         except Exception as e:
             logger.error(f"Error getting embedding: {str(e)}")
             raise
@@ -95,15 +51,12 @@ class LocalEmbeddingHandler:
     def embed_documents(self, documents: List[Document]) -> List[Dict]:
         """
         Embed a list of documents.
-
-        Args:
-            documents (List[Document]): Documents to embed
-
-        Returns:
-            List[Dict]: List of documents with embeddings
         """
-        embedded_documents = []
+        # First, fit the vectorizer on all documents
+        all_texts = [doc.page_content for doc in documents]
+        self._fit_vectorizer(all_texts)
 
+        embedded_documents = []
         for doc in documents:
             try:
                 embedding = self.get_embedding(doc.page_content)
@@ -120,11 +73,11 @@ class LocalEmbeddingHandler:
         return embedded_documents
 ```
 
-Create a test script `test_local_embedding.py`:
+Test script (`test_offline_embedding.py`):
 
 ```python
 from app.ingestion.ingestion import DataIngestion
-from app.embedding.local_embedding import LocalEmbeddingHandler
+from app.embedding.offline_embedding import OfflineEmbeddingHandler
 
 def test_embedding():
     # Initialize DataIngestion
@@ -134,8 +87,8 @@ def test_embedding():
     # Load documents
     documents = ingestion.load_json_files()
 
-    # Initialize LocalEmbeddingHandler
-    embedding_handler = LocalEmbeddingHandler()
+    # Initialize OfflineEmbeddingHandler
+    embedding_handler = OfflineEmbeddingHandler()
 
     # Embed documents
     embedded_docs = embedding_handler.embed_documents(documents)
@@ -150,19 +103,24 @@ if __name__ == "__main__":
     test_embedding()
 ```
 
-Key features of this implementation:
+Key features of this offline implementation:
 
-1. **Local Processing**: All embedding is done locally using SentenceTransformers
-2. **Caching**: Implements local caching to avoid re-embedding identical content
-3. **Error Handling**: Includes robust error handling and logging
-4. **Memory Efficient**: Converts torch tensors to lists for storage
-5. **Easy to Use**: Simple interface that maintains compatibility with the previous implementation
+1. Uses scikit-learn's TF-IDF vectorizer which works completely offline
+2. No external model downloads required
+3. Generates fixed-length embeddings (1024 dimensions by default)
+4. Includes basic text preprocessing (stop word removal)
+5. Maintains compatibility with your existing code structure
 
-To test:
+To use this:
+
+1. Ensure scikit-learn is installed (should be available in your intranet artifactory):
 ```bash
-python test_local_embedding.py
+pip install scikit-learn
 ```
 
-The `all-MiniLM-L6-v2` model will be downloaded automatically on first use (~100MB) and cached locally. This model provides a good balance between speed and quality for most use cases.
+2. Run the test script:
+```bash
+python test_offline_embedding.py
+```
 
-Would you like to proceed with testing this implementation, or would you like me to explain any part in more detail?
+This solution should work completely offline in your intranet environment. Would you like me to explain any part in more detail?
