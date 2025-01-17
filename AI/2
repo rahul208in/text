@@ -1,48 +1,73 @@
 
-For an offline environment, let's use a simpler embedding approach that doesn't require downloading models. We'll use scikit-learn's TF-IDF vectorizer which works completely offline:
+The folder you have for the `gte-large` model contains all the necessary files to load the model locally. These files are typical for Hugging Face models and include:
+
+1. **`config.json`**: Configuration file for the model architecture.
+2. **`pytorch_model.bin`**: The actual model weights.
+3. **`tokenizer_config.json`**: Configuration for the tokenizer.
+4. **`vocab.txt`**: Vocabulary file for the tokenizer.
+5. **`sentence_bert_config.json`**: Configuration specific to Sentence-BERT models.
+6. **Other files**: Supporting files like `special_tokens_map.json`, `data.pkl`, etc.
+
+You can load this model locally using the `SentenceTransformer` class from the `sentence-transformers` library. Here's how you can do it:
+
+---
+
+### **Steps to Use the Local GTE-Large Model**
+
+1. **Ensure the `sentence-transformers` library is installed**:
+   If it's not already installed in your environment, ensure it's available in your intranet artifactory and install it:
+   ```bash
+   pip install sentence-transformers
+   ```
+
+2. **Update the Path to Your Local Model**:
+   Use the path to the folder containing the files (e.g., `/path/to/gte-large`).
+
+3. **Load the Model Locally**:
+   Modify your embedding handler to load the model from the local folder.
+
+---
+
+### **Code to Load and Use the Local GTE-Large Model**
+
+Here’s the updated `GTEEmbeddingHandler` class:
 
 ```python
-# app/embedding/offline_embedding.py
-
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sentence_transformers import SentenceTransformer
 from typing import List, Dict
 from pathlib import Path
 from loguru import logger
 from langchain.schema import Document
-import pickle
-import hashlib
 
-class OfflineEmbeddingHandler:
+class GTEEmbeddingHandler:
     """
-    Handles document embedding using TF-IDF vectorizer for offline environments
+    Handles document embedding using GTE-Large model locally
     """
-    def __init__(self, cache_dir: str = "cache/embeddings"):
+    def __init__(self,
+                 model_path: str = "/path/to/gte-large",  # Update this path
+                 cache_dir: str = "cache/embeddings"):
         """
-        Initialize the OfflineEmbeddingHandler.
-        """
-        self.vectorizer = TfidfVectorizer(
-            max_features=1024,  # Limit vocabulary size
-            stop_words='english'  # Remove common English words
-        )
-        self.is_fitted = False
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("Initialized offline embedding handler")
+        Initialize the GTEEmbeddingHandler.
 
-    def _fit_vectorizer(self, texts: List[str]):
-        """Fit the vectorizer on a collection of texts"""
-        self.vectorizer.fit(texts)
-        self.is_fitted = True
+        Args:
+            model_path (str): Path to the local GTE-Large model files
+            cache_dir (str): Directory to store embedding cache
+        """
+        try:
+            self.model = SentenceTransformer(model_path)
+            self.cache_dir = Path(cache_dir)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Initialized GTE-Large embedding model from: {model_path}")
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            raise
 
     def get_embedding(self, text: str) -> List[float]:
         """
-        Get embedding for a text using TF-IDF
+        Get embedding for a text using GTE-Large
         """
-        if not self.is_fitted:
-            self._fit_vectorizer([text])
-        
         try:
-            embedding = self.vectorizer.transform([text]).toarray()[0]
+            embedding = self.model.encode(text)
             return embedding.tolist()
         except Exception as e:
             logger.error(f"Error getting embedding: {str(e)}")
@@ -52,10 +77,6 @@ class OfflineEmbeddingHandler:
         """
         Embed a list of documents.
         """
-        # First, fit the vectorizer on all documents
-        all_texts = [doc.page_content for doc in documents]
-        self._fit_vectorizer(all_texts)
-
         embedded_documents = []
         for doc in documents:
             try:
@@ -73,13 +94,17 @@ class OfflineEmbeddingHandler:
         return embedded_documents
 ```
 
-Test script (`test_offline_embedding.py`):
+---
+
+### **Test Script**
+
+Here’s how you can test the embedding handler with your local GTE-Large model:
 
 ```python
 from app.ingestion.ingestion import DataIngestion
-from app.embedding.offline_embedding import OfflineEmbeddingHandler
+from app.embedding.gte_embedding import GTEEmbeddingHandler
 
-def test_embedding():
+def test_gte_embedding():
     # Initialize DataIngestion
     folder_path = "data/json_files/"
     ingestion = DataIngestion(folder_path)
@@ -87,8 +112,8 @@ def test_embedding():
     # Load documents
     documents = ingestion.load_json_files()
 
-    # Initialize OfflineEmbeddingHandler
-    embedding_handler = OfflineEmbeddingHandler()
+    # Initialize GTEEmbeddingHandler
+    embedding_handler = GTEEmbeddingHandler(model_path="/path/to/gte-large")  # Update the path
 
     # Embed documents
     embedded_docs = embedding_handler.embed_documents(documents)
@@ -97,30 +122,39 @@ def test_embedding():
     for doc in embedded_docs:
         print(f"File: {doc['metadata']['file_name']}")
         print(f"Embedding length: {len(doc['embedding'])}")
+        print(f"First few dimensions: {doc['embedding'][:5]}")  # Print first 5 dimensions
         print("-" * 50)
 
 if __name__ == "__main__":
-    test_embedding()
+    test_gte_embedding()
 ```
 
-Key features of this offline implementation:
+---
 
-1. Uses scikit-learn's TF-IDF vectorizer which works completely offline
-2. No external model downloads required
-3. Generates fixed-length embeddings (1024 dimensions by default)
-4. Includes basic text preprocessing (stop word removal)
-5. Maintains compatibility with your existing code structure
+### **Expected Output**
 
-To use this:
+For each document, you should see:
+- The file name
+- The length of the embedding vector (should be 1024 for GTE-Large)
+- The first few dimensions of the embedding vector
 
-1. Ensure scikit-learn is installed (should be available in your intranet artifactory):
-```bash
-pip install scikit-learn
+Example:
+```
+File: file1.json
+Embedding length: 1024
+First few dimensions: [0.123, -0.456, 0.789, -0.101, 0.112]
+--------------------------------------------------
+File: file2.json
+Embedding length: 1024
+First few dimensions: [0.234, -0.567, 0.890, -0.202, 0.223]
+--------------------------------------------------
 ```
 
-2. Run the test script:
-```bash
-python test_offline_embedding.py
-```
+---
 
-This solution should work completely offline in your intranet environment. Would you like me to explain any part in more detail?
+### **Key Points**
+1. Ensure the `model_path` points to the folder containing the GTE-Large files.
+2. The `SentenceTransformer` class will automatically load the model from the local folder.
+3. The embeddings generated will be 1024-dimensional vectors.
+
+Let me know if you encounter any issues or need further assistance!
