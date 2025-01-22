@@ -1,0 +1,210 @@
+
+Thank you for sharing your project structure! Based on the structure, here’s how you can proceed with storing embeddings in ChromaDB while keeping your project organized and reusable.
+
+---
+
+### **Updated Plan for Your Project Structure**
+
+Your project structure looks well-organized, and we can integrate the ChromaDB functionality into it. Here's how:
+
+1. **Add a New File for ChromaDB Integration**:
+   - Create a new file: `app/chromadb_handler.py`.
+   - This file will handle all ChromaDB-related operations (initialization, storing embeddings, querying, etc.).
+
+2. **Update Your Workflow**:
+   - Use the existing `gte_embedding.py` for generating embeddings.
+   - Use the existing `ingestion.py` for loading documents.
+   - Add the new `chromadb_handler.py` to store and query embeddings.
+
+3. **Run the Workflow**:
+   - Create a script (e.g., `store_embeddings.py`) in the root directory to tie everything together.
+
+---
+
+### **Step 1: Create `chromadb_handler.py`**
+
+Add the following code to `app/chromadb_handler.py`:
+
+```python
+import os
+import chromadb
+from chromadb.config import Settings
+
+
+class ChromaDBHandler:
+    def __init__(self, persist_directory="cache/chroma_db"):
+        """
+        Initialize ChromaDB handler.
+
+        Args:
+            persist_directory (str): Directory where ChromaDB will store its data.
+        """
+        # Ensure the persist directory exists
+        os.makedirs(persist_directory, exist_ok=True)
+
+        # Initialize ChromaDB client
+        self.client = chromadb.Client(Settings(
+            persist_directory=persist_directory,
+            chroma_db_impl="duckdb+parquet",
+        ))
+
+    def create_collection(self, collection_name="document_embeddings"):
+        """
+        Create or get a ChromaDB collection.
+
+        Args:
+            collection_name (str): Name of the collection.
+
+        Returns:
+            Collection: ChromaDB collection object.
+        """
+        return self.client.get_or_create_collection(name=collection_name)
+
+    def store_embeddings(self, embedded_docs, collection_name="document_embeddings"):
+        """
+        Store embeddings in ChromaDB.
+
+        Args:
+            embedded_docs (list): List of documents with embeddings.
+            collection_name (str): Name of the collection.
+
+        Returns:
+            int: Number of documents stored.
+        """
+        collection = self.create_collection(collection_name)
+
+        for doc in embedded_docs:
+            collection.add(
+                documents=[doc["content"]],
+                metadatas=[doc["metadata"]],
+                ids=[str(doc["metadata"]["file_name"])],  # Ensure ID is a string
+                embeddings=[doc["embedding"].tolist()]  # Convert numpy array to list
+            )
+
+        return len(embedded_docs)
+
+    def query_collection(self, collection_name="document_embeddings"):
+        """
+        Query all documents from a collection.
+
+        Args:
+            collection_name (str): Name of the collection to query.
+
+        Returns:
+            dict: Collection results.
+        """
+        collection = self.client.get_collection(collection_name)
+        return collection.get()
+```
+
+---
+
+### **Step 2: Create `store_embeddings.py`**
+
+Add the following code to `store_embeddings.py` in the root directory:
+
+```python
+from app.ingestion.ingestion import DataIngestion
+from app.embedding.gte_embedding import GTEEmbeddingHandler
+from app.chromadb_handler import ChromaDBHandler
+
+
+def main():
+    # Step 1: Load documents
+    print("Loading documents...")
+    folder_path = "data/json_files/"
+    ingestion = DataIngestion(folder_path)
+    documents = ingestion.load_json_files()
+    print(f"Loaded {len(documents)} documents.")
+
+    # Step 2: Generate embeddings
+    print("\nGenerating embeddings...")
+    embedding_handler = GTEEmbeddingHandler()
+    embedded_docs = embedding_handler.embed_documents(documents)
+    print(f"Generated embeddings for {len(embedded_docs)} documents.")
+
+    # Step 3: Store embeddings in ChromaDB
+    print("\nStoring embeddings in ChromaDB...")
+    chroma_handler = ChromaDBHandler()
+    num_stored = chroma_handler.store_embeddings(embedded_docs)
+    print(f"Stored {num_stored} documents in ChromaDB.")
+
+    # Step 4: Verify stored data
+    print("\nVerifying stored data...")
+    results = chroma_handler.query_collection()
+    print(f"Number of documents in collection: {len(results['documents'])}")
+    for i, (doc, metadata) in enumerate(zip(results["documents"], results["metadatas"])):
+        if i < 3:  # Print first 3 documents as a sample
+            print(f"\nDocument {i+1}:")
+            print(f"Content: {doc[:100]}...")  # Show first 100 characters
+            print(f"Metadata: {metadata}")
+            print("-" * 50)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### **Step 3: Install ChromaDB**
+
+Before running the script, ensure ChromaDB is installed:
+```bash
+pip install chromadb
+```
+
+---
+
+### **Step 4: Run the Script**
+
+Run the `store_embeddings.py` script from the root directory:
+```bash
+python store_embeddings.py
+```
+
+---
+
+### **Step 5: Verify the Workflow**
+
+After running the script:
+1. Check the `cache/chroma_db` directory to ensure ChromaDB files are created.
+2. Verify the console output:
+   - It should show the number of documents loaded, embeddings generated, and documents stored in ChromaDB.
+   - It will also print a sample of stored documents and their metadata.
+
+---
+
+### **Project Structure After Changes**
+
+Your updated project structure will look like this:
+
+```
+RAG_SYSTEM/
+├── app/
+│   ├── chromadb_handler.py  # New file for ChromaDB operations
+│   ├── embedding/
+│   │   ├── gte_embedding.py
+│   │   └── test_gte_embedding.py
+│   ├── ingestion/
+│   │   ├── ingestion.py
+│   │   └── test_ingestion.py
+│   ├── __init__.py
+├── cache/
+│   └── chroma_db/  # ChromaDB storage directory
+├── data/
+│   └── json_files/
+│       ├── sample1.json
+│       └── sample2.json
+├── venv/
+├── requirements.txt
+├── store_embeddings.py  # Script to run the workflow
+```
+
+---
+
+### **Next Steps**
+1. Run the `store_embeddings.py` script to test the workflow.
+2. If you plan to add new documents later, you can reuse the `store_embeddings.py` script to update the ChromaDB collection.
+
+Let me know if you encounter any issues or need further assistance!
