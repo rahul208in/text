@@ -1,230 +1,249 @@
-l
-Great to hear that it's working! If the system is currently providing answers "as is" from the JSON, we can enhance it to make the responses more engaging, summarized, or tailored to your needs. Here are some expert suggestions to improve the system:
 
----
-
-### **1. Summarize the Context Before Answering**
-Instead of directly using the retrieved documents as context, you can summarize the retrieved documents before passing them to the LLM. This will:
-- Reduce redundancy in the context.
-- Allow the LLM to focus on the key points.
-- Make the answers more concise and meaningful.
-
-#### **Implementation**
-You can use a summarization chain or a custom summarization prompt to summarize the retrieved documents before answering the question.
-
-**Code Update:**
-Modify the QA chain to include a summarization step for the retrieved documents.
+Yes, let me explain the process and show you the optimized code that makes the embedding process more explicit:
 
 ```python
-from langchain.chains import LLMChain
+# main.py
+
+import os
+import sys
+import contextlib
+import hashlib
+from typing import List
+from config import JSON_FILES_DIR, CHROMA_DB_DIR, LLM_MODEL_PATH, EMBEDDING_MODEL_PATH
+from utils.json_processor import load_all_json_files, extract_text_from_json
+from database.vector_store import initialize_chroma_db, add_documents_to_vectorstore
+from langchain.llms import LlamaCpp
+from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+from langchain.embeddings import HuggingFaceEmbeddings
 
-def summarize_documents(llm, documents):
-    """Summarize the retrieved documents."""
-    summarization_prompt = PromptTemplate(
-        template="Summarize the following text:\n\n{text}\n\nSummary:",
-        input_variables=["text"]
-    )
-    summarization_chain = LLMChain(llm=llm, prompt=summarization_prompt)
+class DocumentStore:
+    def __init__(self):
+        self.embeddings = self._initialize_embeddings()
+        self.vectorstore = None
 
-    # Combine all documents into one text and summarize
-    combined_text = " ".join([doc.page_content for doc in documents])
-    summary = summarization_chain.run({"text": combined_text})
-    return summary
-```
+    def _initialize_embeddings(self) -> HuggingFaceEmbeddings:
+        """Initialize the embedding model."""
+        with suppress_stdout():
+            return HuggingFaceEmbeddings(
+                model_name=EMBEDDING_MODEL_PATH,
+                model_kwargs={'device': 'cpu'}
+            )
 
-**Integration in `main.py`:**
-Add the summarization step before passing the context to the QA chain.
+    def embed_documents(self, documents: List[str]):
+        """Embed documents using the embedding model."""
+        print("Generating embeddings for documents...")
+        with suppress_stdout():
+            return self.embeddings.embed_documents(documents)
 
-```python
-# Step 3: Interactive question answering
-print("\nReady for questions!")
-while True:
-    question = input("\nEnter your question (or 'quit' to exit): ")
-    if question.lower() == 'quit':
-        break
+    def embed_query(self, query: str):
+        """Embed a single query using the embedding model."""
+        with suppress_stdout():
+            return self.embeddings.embed_query(query)
 
-    print("\nProcessing your question...")
+    def initialize_vectorstore(self, documents: List[str] = None):
+        """Initialize or load the vector store."""
+        with suppress_stdout():
+            self.vectorstore = initialize_chroma_db(CHROMA_DB_DIR, self.embeddings)
+            if documents:
+                self.vectorstore = add_documents_to_vectorstore(self.vectorstore, documents)
+        return self.vectorstore
+
+@contextlib.contextmanager
+def suppress_stdout():
+    """Context manager to suppress stdout and stderr."""
+    stdout = sys.stdout
+    old_stderr = sys.stderr
+    null_device = open(os.devnull, 'w')
+    try:
+        sys.stdout = null_device
+        sys.stderr = null_device
+        yield
+    finally:
+        sys.stdout = stdout
+        sys.stderr = old_stderr
+        null_device.close()
+
+def calculate_documents_hash(documents):
+    """Calculate a hash of all documents to check for changes."""
+    combined_text = "".join(documents)
+    return hashlib.md5(combined_text.encode()).hexdigest()
+
+def save_hash(hash_value):
+    """Save hash to a file."""
+    with open(os.path.join(CHROMA_DB_DIR, "documents_hash.txt"), "w") as f:
+        f.write(hash_value)
+
+def load_hash():
+    """Load previously saved hash."""
+    hash_file = os.path.join(CHROMA_DB_DIR, "documents_hash.txt")
+    if os.path.exists(hash_file):
+        with open(hash_file, "r") as f:
+            return f.read().strip()
+    return None
+
+def initialize_llm():
+    """Initialize the LLM with suppressed output."""
     with suppress_stdout():
-        result = qa_chain({"query": question})
+        llm = LlamaCpp(
+            model_path=LLM_MODEL_PATH,
+            temperature=0.75,
+            max_tokens=2000,
+            top_p=1,
+            verbose=True,
+        )
+    return llm
 
-    # Summarize the retrieved documents
-    summary = summarize_documents(llm, result['source_documents'])
+def setup_qa_chain(vectorstore):
+    """Setup QA chain with strict prompt."""
+    llm = initialize_llm()
 
-    # Use the summary as context for the final answer
-    final_prompt = f"Use the following summary to answer the question:\n\n{summary}\n\nQuestion: {question}\nAnswer:"
-    final_answer = llm(final_prompt)
-
-    print(f"\nQuestion: {question}")
-    print(f"Answer: {final_answer}")
-    print("\nSource Documents:")
-    for i, doc in enumerate(result['source_documents'], 1):
-        print(f"\nDocument {i}:")
-        print(doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content)
-```
-
----
-
-### **2. Rephrase Answers to Make Them More Engaging**
-You can instruct the LLM to rephrase the answer in a more conversational or engaging tone. This can be done by modifying the prompt to include specific instructions.
-
-#### **Implementation**
-Update the QA chain's prompt to include rephrasing instructions.
-
-**Updated Prompt:**
-```python
-strict_prompt = """Use the following pieces of context to answer the question at the end.
-If you don't know the answer, just say "I don't know." Do not attempt to answer questions unrelated to the context.
-Rephrase the answer to make it more engaging and conversational.
-
-{context}
-
-Question: {question}
-Answer:"""
-```
-
-This will encourage the LLM to provide answers in a more interesting and conversational tone.
-
----
-
-### **3. Generate Summarized and Contextualized Answers**
-Instead of directly answering the question, you can ask the LLM to:
-- Summarize the context.
-- Provide a detailed, contextualized answer.
-
-#### **Implementation**
-Modify the prompt to include summarization and contextualization instructions.
-
-**Updated Prompt:**
-```python
-strict_prompt = """Use the following pieces of context to answer the question at the end.
-First, summarize the context in a few sentences. Then, provide a detailed and contextualized answer to the question.
-If you don't know the answer, just say "I don't know." Do not attempt to answer questions unrelated to the context.
-
-{context}
-
-Question: {question}
-Summary:
-Answer:"""
-```
-
-This will make the answers more structured and informative.
-
----
-
-### **4. Add a Creative or Expert Tone**
-If you want the answers to sound more creative or expert-like, you can adjust the prompt to include specific instructions for tone and style.
-
-#### **Implementation**
-Modify the prompt to include tone/style instructions.
-
-**Updated Prompt:**
-```python
-strict_prompt = """Use the following pieces of context to answer the question at the end.
-Answer the question in a professional and expert tone. Provide additional insights or examples if relevant.
+    strict_prompt = """Use the following pieces of context to answer the question at the end.
 If you don't know the answer, just say "I don't know." Do not attempt to answer questions unrelated to the context.
 
 {context}
 
 Question: {question}
 Answer:"""
+
+    prompt_template = PromptTemplate(
+        template=strict_prompt, input_variables=["context", "question"]
+    )
+
+    with suppress_stdout():
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vectorstore.as_retriever(),
+            return_source_documents=True,
+            chain_type_kwargs={"prompt": prompt_template},
+            verbose=True
+        )
+
+    return qa_chain
+
+def initialize_or_load_vectorstore(doc_store):
+    """Initialize or load existing vectorstore."""
+    print("Checking existing database...")
+
+    # Create directory if it doesn't exist
+    os.makedirs(CHROMA_DB_DIR, exist_ok=True)
+
+    # Load documents
+    all_json_data = load_all_json_files(JSON_FILES_DIR)
+    if not all_json_data:
+        print("No JSON data found in the directory!")
+        return None, None
+
+    documents = extract_text_from_json(all_json_data)
+    current_hash = calculate_documents_hash(documents)
+    saved_hash = load_hash()
+
+    # Check if database exists and hash matches
+    if os.path.exists(CHROMA_DB_DIR) and saved_hash == current_hash:
+        print("Loading existing database...")
+        vectorstore = doc_store.initialize_vectorstore()
+        return vectorstore, None
+    else:
+        print("Initializing new database...")
+        # Generate embeddings for new documents
+        vectorstore = doc_store.initialize_vectorstore(documents)
+        save_hash(current_hash)
+        return vectorstore, documents
+
+def main():
+    # Initialize document store
+    doc_store = DocumentStore()
+
+    # Step 1: Initialize or load existing vectorstore
+    vectorstore, documents = initialize_or_load_vectorstore(doc_store)
+    if vectorstore is None:
+        return
+
+    if documents:
+        print(f"Processed {len(documents)} documents")
+    else:
+        print("Using existing database")
+
+    # Step 2: Setup QA chain
+    print("Setting up QA chain...")
+    qa_chain = setup_qa_chain(vectorstore)
+
+    # Step 3: Interactive question answering
+    print("\nReady for questions!")
+    while True:
+        question = input("\nEnter your question (or 'quit' to exit): ")
+        if question.lower() == 'quit':
+            break
+
+        print("\nProcessing your question...")
+        # The question is automatically embedded when searching
+        with suppress_stdout():
+            result = qa_chain({"query": question})
+
+        print(f"\nQuestion: {question}")
+        print(f"Answer: {result['result']}")
+        print("\nSource Documents:")
+        for i, doc in enumerate(result['source_documents'], 1):
+            print(f"\nDocument {i}:")
+            print(doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content)
+
+if __name__ == "__main__":
+    main()
 ```
 
-This will make the answers sound more authoritative and insightful.
+Here's what happens in the embedding process:
 
----
+1. **Document Embedding**:
+   - When new documents are added:
+     1. The documents are passed through the embedding model (`HuggingFaceEmbeddings`)
+     2. Each document is converted into a high-dimensional vector
+     3. These vectors are stored in ChromaDB along with the original text
 
-### **5. Use a Summarization Model**
-If you want more advanced summarization, you can use a dedicated summarization model (e.g., `t5-small`, `bart-large-cnn`) to preprocess the documents before passing them to the LLM.
+2. **Query Process**:
+   - When a question is asked:
+     1. The question is embedded using the same embedding model
+     2. ChromaDB performs a similarity search between the question embedding and stored document embeddings
+     3. The most relevant documents are retrieved based on embedding similarity
+     4. These documents are then used as context for the LLM to generate an answer
 
-#### **Implementation**
-Use a summarization model from `transformers` or `sentence-transformers`.
+3. **Optimization**:
+   - Document embeddings are only generated once and stored in ChromaDB
+   - Only new questions need to be embedded during query time
+   - The hash system ensures we don't regenerate embeddings for unchanged documents
 
-**Example:**
+The `DocumentStore` class now makes this process more explicit and manageable. The embedding process is handled automatically by LangChain's integration with ChromaDB, but we can see it more clearly in the code structure.
+
+To update the supporting files:
+
 ```python
-from transformers import pipeline
+# database/vector_store.py
 
-def summarize_with_model(documents):
-    """Summarize documents using a summarization model."""
-    summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-    combined_text = " ".join([doc.page_content for doc in documents])
-    summary = summarizer(combined_text, max_length=150, min_length=50, do_sample=False)
-    return summary[0]['summary_text']
+from langchain.vectorstores import Chroma
+
+def initialize_chroma_db(persist_directory, embeddings):
+    """Initialize ChromaDB with LangChain integration."""
+    vectorstore = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embeddings
+    )
+    return vectorstore
+
+def add_documents_to_vectorstore(vectorstore, documents):
+    """Add documents to the vector store."""
+    vectorstore.add_texts(documents)
+    return vectorstore
 ```
 
-**Integration in `main.py`:**
-Replace the `summarize_documents` function with `summarize_with_model`.
+This implementation:
+1. Makes the embedding process more transparent
+2. Maintains efficiency by reusing stored embeddings
+3. Only generates new embeddings when necessary
+4. Uses the same embedding model for both documents and queries
 
----
+The similarity search in ChromaDB is automatic when you use the retriever, and it:
+1. Embeds your question
+2. Finds the most similar document embeddings
+3. Returns the corresponding documents as context for the LLM
 
-### **6. Add Follow-Up Questions**
-To make the interaction more engaging, you can have the system suggest follow-up questions based on the context.
-
-#### **Implementation**
-Generate follow-up questions using the LLM.
-
-**Example:**
-```python
-def generate_follow_up_questions(llm, context):
-    """Generate follow-up questions based on the context."""
-    follow_up_prompt = f"Based on the following context, suggest 3 follow-up questions:\n\n{context}\n\nQuestions:"
-    follow_up_questions = llm(follow_up_prompt)
-    return follow_up_questions
-```
-
-**Integration in `main.py`:**
-After answering the question, generate and display follow-up questions.
-
-```python
-follow_up_questions = generate_follow_up_questions(llm, summary)
-print("\nFollow-Up Questions:")
-print(follow_up_questions)
-```
-
----
-
-### **7. Use a Chain of Thought (CoT) Approach**
-Encourage the LLM to think step-by-step before answering. This can improve the quality of the answers.
-
-#### **Implementation**
-Modify the prompt to include step-by-step reasoning.
-
-**Updated Prompt:**
-```python
-strict_prompt = """Use the following pieces of context to answer the question at the end.
-Think step-by-step before answering. If you don't know the answer, just say "I don't know." Do not attempt to answer questions unrelated to the context.
-
-{context}
-
-Question: {question}
-Step-by-step reasoning:
-Answer:"""
-```
-
----
-
-### **8. Combine Summarization and Rephrasing**
-You can combine summarization, rephrasing, and expert tone to create a highly engaging and informative system.
-
-**Example Prompt:**
-```python
-strict_prompt = """Use the following pieces of context to answer the question at the end.
-First, summarize the context in a few sentences. Then, provide a detailed and contextualized answer in a professional and engaging tone.
-If you don't know the answer, just say "I don't know." Do not attempt to answer questions unrelated to the context.
-
-{context}
-
-Question: {question}
-Summary:
-Answer:"""
-```
-
----
-
-### **Recommendation**
-- Start with **summarization** to reduce redundancy and improve focus.
-- Add **rephrasing** or a specific tone to make the answers more engaging.
-- If needed, use a **summarization model** for advanced preprocessing.
-- Experiment with **follow-up questions** or **step-by-step reasoning** for a more interactive experience.
-
-Let me know which approach you'd like to implement, and I can help you integrate it!
+Let me know if you need any clarification about the embedding process or have questions about the implementation!
