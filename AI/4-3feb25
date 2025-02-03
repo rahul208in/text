@@ -1,51 +1,45 @@
 
-The error occurs because we need to properly integrate ChromaDB with LangChain. Let's fix this by creating a proper LangChain retriever from the ChromaDB collection. Here's the corrected implementation:
-
-### **1. Update `database/vector_store.py`**
-
-```python
-# database/vector_store.py
-
-import chromadb
-from chromadb.config import Settings
-from langchain.vectorstores import Chroma
-from langchain.embeddings import HuggingFaceEmbeddings
-
-def initialize_chroma_db(persist_directory, embedding_model):
-    """Initialize ChromaDB with LangChain integration."""
-    # Create HuggingFaceEmbeddings wrapper for the embedding model
-    embeddings = HuggingFaceEmbeddings(
-        model_name=embedding_model,
-        model_kwargs={'device': 'cpu'}
-    )
-
-    # Initialize Chroma with LangChain
-    vectorstore = Chroma(
-        persist_directory=persist_directory,
-        embedding_function=embeddings
-    )
-
-    return vectorstore
-
-def add_documents_to_vectorstore(vectorstore, documents):
-    """Add documents to the vector store."""
-    vectorstore.add_texts(documents)
-    return vectorstore
-```
-
-### **2. Update `main.py`**
+I'll update your main.py with the corrected implementation while keeping the stdout/stderr suppression. Here's the complete updated code:
 
 ```python
 # main.py
 
 import os
+import sys
+import contextlib
 from config import JSON_FILES_DIR, CHROMA_DB_DIR, LLM_MODEL_PATH, EMBEDDING_MODEL_PATH
 from utils.json_processor import load_all_json_files, extract_text_from_json
-from models.model_loader import load_llm_model, load_embedding_model
+from models.model_loader import load_embedding_model
 from database.vector_store import initialize_chroma_db, add_documents_to_vectorstore
-from agents.qa_agent import create_qa_agent
-from langchain.chains import RetrievalQA
 from langchain.llms import LlamaCpp
+from langchain.chains import RetrievalQA
+
+@contextlib.contextmanager
+def suppress_stdout():
+    """Context manager to suppress stdout and stderr."""
+    stdout = sys.stdout
+    old_stderr = sys.stderr
+    null_device = open(os.devnull, 'w')
+    try:
+        sys.stdout = null_device
+        sys.stderr = null_device
+        yield
+    finally:
+        sys.stdout = stdout
+        sys.stderr = old_stderr
+        null_device.close()
+
+def initialize_llm():
+    """Initialize the LLM with suppressed output."""
+    with suppress_stdout():
+        llm = LlamaCpp(
+            model_path=LLM_MODEL_PATH,
+            temperature=0.75,
+            max_tokens=2000,
+            top_p=1,
+            verbose=True,
+        )
+    return llm
 
 def main():
     # Step 1: Load all JSON data from directory
@@ -66,32 +60,25 @@ def main():
     print("Initializing ChromaDB...")
     os.makedirs(CHROMA_DB_DIR, exist_ok=True)
 
-    # Initialize vector store
-    vectorstore = initialize_chroma_db(CHROMA_DB_DIR, EMBEDDING_MODEL_PATH)
-
-    # Add documents to vector store
-    print("Adding documents to vector store...")
-    vectorstore = add_documents_to_vectorstore(vectorstore, documents)
+    # Initialize vector store with suppressed output
+    with suppress_stdout():
+        vectorstore = initialize_chroma_db(CHROMA_DB_DIR, EMBEDDING_MODEL_PATH)
+        vectorstore = add_documents_to_vectorstore(vectorstore, documents)
 
     # Step 3: Initialize LLM
     print("Initializing LLM...")
-    llm = LlamaCpp(
-        model_path=LLM_MODEL_PATH,
-        temperature=0.75,
-        max_tokens=2000,
-        top_p=1,
-        verbose=True,
-    )
+    llm = initialize_llm()
 
     # Step 4: Create QA chain
     print("Creating QA chain...")
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectorstore.as_retriever(),
-        return_source_documents=True,
-        verbose=True
-    )
+    with suppress_stdout():
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vectorstore.as_retriever(),
+            return_source_documents=True,
+            verbose=True
+        )
 
     # Step 5: Interactive question answering
     while True:
@@ -100,7 +87,8 @@ def main():
             break
 
         print("\nProcessing your question...")
-        result = qa_chain({"query": question})
+        with suppress_stdout():
+            result = qa_chain({"query": question})
 
         print(f"\nQuestion: {question}")
         print(f"Answer: {result['result']}")
@@ -113,44 +101,79 @@ if __name__ == "__main__":
     main()
 ```
 
-### **3. Update `agents/qa_agent.py`**
+And here are the necessary supporting files that need to be updated:
 
 ```python
-# agents/qa_agent.py
+# database/vector_store.py
 
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain.vectorstores import Chroma
+from langchain.embeddings import HuggingFaceEmbeddings
 
-def create_qa_chain(llm, retriever):
-    """Create a question-answering chain using LangChain."""
-    # Define the prompt template
-    prompt_template = """Use the following pieces of context to answer the question at the end.
-    If you don't know the answer, just say that you don't know, don't try to make up an answer.
-
-    {context}
-
-    Question: {question}
-    Answer:"""
-
-    PROMPT = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
+def initialize_chroma_db(persist_directory, embedding_model_path):
+    """Initialize ChromaDB with LangChain integration."""
+    embeddings = HuggingFaceEmbeddings(
+        model_name=embedding_model_path,
+        model_kwargs={'device': 'cpu'}
     )
 
-    # Create the QA chain
-    chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-        chain_type_kwargs={"prompt": PROMPT}
+    vectorstore = Chroma(
+        persist_directory=persist_directory,
+        embedding_function=embeddings
     )
 
-    return chain
-```
+    return vectorstore
 
-### **4. Update `config.py`**
+def add_documents_to_vectorstore(vectorstore, documents):
+    """Add documents to the vector store."""
+    vectorstore.add_texts(documents)
+    return vectorstore
+``````python
+# utils/json_processor.py
 
-```python
+import json
+import os
+from typing import List, Dict
+
+def get_all_json_files(directory: str) -> List[str]:
+    """Get paths of all JSON files in the specified directory."""
+    json_files = []
+    for file in os.listdir(directory):
+        if file.endswith('.json'):
+            json_files.append(os.path.join(directory, file))
+    return json_files
+
+def load_json(file_path: str) -> List[Dict]:
+    """Load JSON data from a file."""
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading {file_path}: {str(e)}")
+        return []
+
+def load_all_json_files(directory: str) -> List[Dict]:
+    """Load data from all JSON files in the directory."""
+    all_data = []
+    json_files = get_all_json_files(directory)
+
+    for file_path in json_files:
+        print(f"Loading {file_path}...")
+        data = load_json(file_path)
+        if isinstance(data, list):
+            all_data.extend(data)
+        else:
+            all_data.append(data)
+
+    return all_data
+
+def extract_text_from_json(json_data: List[Dict], key: str = "content") -> List[str]:
+    """Extract text data from JSON based on a specific key."""
+    texts = []
+    for item in json_data:
+        if isinstance(item, dict) and key in item:
+            texts.append(item[key])
+    return texts
+``````python
 # config.py
 
 # Path to JSON files directory
@@ -168,50 +191,23 @@ MAX_TOKENS = 2000
 TEMPERATURE = 0.75
 ```
 
-### **5. Key Changes**
+Key changes in this updated version:
 
-1. Properly integrated ChromaDB with LangChain using the `langchain.vectorstores.Chroma` class
-2. Added proper retriever creation using LangChain's vectorstore
-3. Implemented source document retrieval in the results
-4. Added better error handling and verbose output
-5. Improved the prompt template for better responses
+1. Maintained the stdout/stderr suppression functionality
+2. Properly integrated ChromaDB with LangChain
+3. Added suppression for model loading and inference
+4. Improved error handling and output formatting
+5. Added source document retrieval in the results
+6. Removed unnecessary model loader module as we're using LangChain's built-in classes
 
-### **6. Running the Project**
+To use this updated version:
 
-1. Ensure all dependencies are installed:
-```bash
-pip install langchain chromadb torch transformers sentence-transformers llama-cpp-python
-```
-
+1. Create the necessary directory structure
 2. Place your JSON files in the `data` directory
-
-3. Run the script:
+3. Ensure all dependencies are installed
+4. Run the main script:
 ```bash
 python main.py
 ```
 
-### **7. Example Usage**
-
-```bash
-$ python main.py
-Loading JSON data from directory...
-Initializing ChromaDB...
-Adding documents to vector store...
-Initializing LLM...
-Creating QA chain...
-
-Enter your question (or 'quit' to exit): What is Python?
-
-Processing your question...
-
-Question: What is Python?
-Answer: Python is a versatile programming language used for web development, data analysis, artificial intelligence, and more.
-
-Source Documents:
-Document 1:
-[Content of the source document...]
-
-Enter your question (or 'quit' to exit): quit
-```
-
-This implementation should now work correctly with both your Mistral LLM and GTE embedding model, while properly integrating with ChromaDB through LangChain. Let me know if you need any clarification or run into any issues!
+The script will now suppress unwanted output while still showing important progress messages and results. Let me know if you need any clarification or run into issues!
