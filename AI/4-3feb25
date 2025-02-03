@@ -1,185 +1,103 @@
 
-Here’s a detailed implementation plan for your project using **ChromaDB** as the vector database and **LangChain** as the agent framework, with Python 3.9. We'll follow the project structure you provided and build the components step by step.
+I'll modify the code to process all JSON files from the `data` directory. Here's the updated implementation:
 
----
-
-### **1. Project Setup**
-
-#### **Environment Setup**
-Run the following commands to set up your Python environment:
-
-```bash
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate  # For Linux/Mac
-# or
-.\venv\Scripts\activate  # For Windows
-
-# Install required packages
-pip install langchain chromadb sentence-transformers torch transformers accelerate
-```
-
----
-
-### **2. Project Structure**
-
-Here’s the project structure you provided, with a brief explanation of each component:
-
-```
-json_rag_project/
-├── data/                  # Directory for storing JSON files
-│   └── your_json_files.json
-├── models/                # Directory for model-related code
-│   └── model_loader.py    # Code to load and manage models
-├── database/              # Directory for vector database code
-│   └── vector_store.py    # Code to manage ChromaDB
-├── agents/                # Directory for LangChain agents
-│   └── qa_agent.py        # Code for the question-answering agent
-├── utils/                 # Directory for utility functions
-│   └── json_processor.py  # Code to process JSON files
-├── config.py              # Configuration file for paths and settings
-└── main.py                # Main entry point for the application
-```
-
----
-
-### **3. Implementation**
-
-#### **3.1. `config.py`**
-This file will store configuration settings like file paths and database settings.
+### **1. Update `config.py`**
 
 ```python
 # config.py
 
-# Path to JSON files
-JSON_FILE_PATH = "data/your_json_files.json"
+# Path to JSON files directory
+JSON_FILES_DIR = "data"  # Directory containing all JSON files
 
 # ChromaDB settings
-CHROMA_DB_DIR = "database/chroma_db"
+CHROMA_DB_DIR = "cache/chroma_db"
 
-# Embedding model
-EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+# Paths to your models
+LLM_MODEL_PATH = r"C:\Users\omish\Downloads\JUNK\models\mistral-7b-instruct-v0.1.Q4_0.gguf"
+EMBEDDING_MODEL_PATH = r"C:\Users\omish\Downloads\JUNK\models\gte-large"
 ```
 
----
-
-#### **3.2. `utils/json_processor.py`**
-This module will handle loading and processing JSON files.
+### **2. Update `utils/json_processor.py`**
 
 ```python
 # utils/json_processor.py
 
 import json
+import os
+from typing import List, Dict
 
-def load_json(file_path):
+def get_all_json_files(directory: str) -> List[str]:
+    """Get paths of all JSON files in the specified directory."""
+    json_files = []
+    for file in os.listdir(directory):
+        if file.endswith('.json'):
+            json_files.append(os.path.join(directory, file))
+    return json_files
+
+def load_json(file_path: str) -> List[Dict]:
     """Load JSON data from a file."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading {file_path}: {str(e)}")
+        return []
 
-def extract_text_from_json(json_data, key="content"):
+def load_all_json_files(directory: str) -> List[Dict]:
+    """Load data from all JSON files in the directory."""
+    all_data = []
+    json_files = get_all_json_files(directory)
+
+    for file_path in json_files:
+        print(f"Loading {file_path}...")
+        data = load_json(file_path)
+        if isinstance(data, list):
+            all_data.extend(data)
+        else:
+            all_data.append(data)
+
+    return all_data
+
+def extract_text_from_json(json_data: List[Dict], key: str = "content") -> List[str]:
     """Extract text data from JSON based on a specific key."""
-    return [item[key] for item in json_data if key in item]
+    texts = []
+    for item in json_data:
+        if isinstance(item, dict) and key in item:
+            texts.append(item[key])
+    return texts
 ```
 
----
-
-#### **3.3. `models/model_loader.py`**
-This module will load the embedding model.
-
-```python
-# models/model_loader.py
-
-from sentence_transformers import SentenceTransformer
-
-def load_embedding_model(model_name):
-    """Load the embedding model."""
-    return SentenceTransformer(model_name)
-```
-
----
-
-#### **3.4. `database/vector_store.py`**
-This module will handle ChromaDB operations, such as creating and querying the vector database.
-
-```python
-# database/vector_store.py
-
-import chromadb
-from chromadb.config import Settings
-
-def initialize_chroma_db(persist_directory):
-    """Initialize ChromaDB with persistence."""
-    client = chromadb.Client(Settings(persist_directory=persist_directory))
-    return client
-
-def create_collection(client, collection_name):
-    """Create a collection in ChromaDB."""
-    return client.get_or_create_collection(collection_name)
-
-def add_documents_to_collection(collection, documents, embeddings):
-    """Add documents and their embeddings to the collection."""
-    for i, (doc, embedding) in enumerate(zip(documents, embeddings)):
-        collection.add(
-            documents=[doc],
-            embeddings=[embedding],
-            ids=[str(i)]
-        )
-
-def query_collection(collection, query_embedding, top_k=5):
-    """Query the collection for similar documents."""
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=top_k
-    )
-    return results
-```
-
----
-
-#### **3.5. `agents/qa_agent.py`**
-This module will define the LangChain agent for question answering.
-
-```python
-# agents/qa_agent.py
-
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain.llms import OpenAI
-
-def create_qa_agent(retriever):
-    """Create a question-answering agent using LangChain."""
-    prompt = PromptTemplate(
-        input_variables=["context", "question"],
-        template="Use the following context to answer the question:\n\n{context}\n\nQuestion: {question}\nAnswer:"
-    )
-    llm = OpenAI(model="text-davinci-003", temperature=0.7)
-    qa_chain = RetrievalQA(llm=llm, retriever=retriever, prompt=prompt)
-    return qa_chain
-```
-
----
-
-#### **3.6. `main.py`**
-This is the main entry point for the application. It will tie everything together.
+### **3. Update `main.py`**
 
 ```python
 # main.py
 
-from config import JSON_FILE_PATH, CHROMA_DB_DIR, EMBEDDING_MODEL_NAME
-from utils.json_processor import load_json, extract_text_from_json
-from models.model_loader import load_embedding_model
+import os
+from config import JSON_FILES_DIR, CHROMA_DB_DIR, LLM_MODEL_PATH, EMBEDDING_MODEL_PATH
+from utils.json_processor import load_all_json_files, extract_text_from_json
+from models.model_loader import load_llm_model, load_embedding_model
 from database.vector_store import initialize_chroma_db, create_collection, add_documents_to_collection, query_collection
 from agents.qa_agent import create_qa_agent
 
 def main():
-    # Step 1: Load JSON data
-    print("Loading JSON data...")
-    json_data = load_json(JSON_FILE_PATH)
-    documents = extract_text_from_json(json_data)
+    # Step 1: Load all JSON data from directory
+    print("Loading JSON data from directory...")
+    all_json_data = load_all_json_files(JSON_FILES_DIR)
 
-    # Step 2: Load embedding model
-    print("Loading embedding model...")
-    embedding_model = load_embedding_model(EMBEDDING_MODEL_NAME)
+    if not all_json_data:
+        print("No JSON data found in the directory!")
+        return
+
+    print(f"Loaded {len(all_json_data)} documents from JSON files")
+
+    # Extract text from all documents
+    documents = extract_text_from_json(all_json_data)
+    print(f"Extracted {len(documents)} text documents")
+
+    # Step 2: Load models
+    print("Loading models...")
+    llm_model = load_llm_model(LLM_MODEL_PATH)
+    embedding_model = load_embedding_model(EMBEDDING_MODEL_PATH)
 
     # Step 3: Generate embeddings
     print("Generating embeddings...")
@@ -187,6 +105,8 @@ def main():
 
     # Step 4: Initialize ChromaDB
     print("Initializing ChromaDB...")
+    # Create cache directory if it doesn't exist
+    os.makedirs(CHROMA_DB_DIR, exist_ok=True)
     chroma_client = initialize_chroma_db(CHROMA_DB_DIR)
     collection = create_collection(chroma_client, "json_collection")
 
@@ -197,37 +117,90 @@ def main():
     # Step 6: Create QA agent
     print("Creating QA agent...")
     retriever = collection.as_retriever()
-    qa_agent = create_qa_agent(retriever)
+    qa_agent = create_qa_agent(llm_model, retriever)
 
     # Step 7: Query the agent
-    print("Querying the agent...")
-    question = "What is the content of the first document?"
-    answer = qa_agent.run(question)
-    print(f"Question: {question}")
-    print(f"Answer: {answer}")
+    while True:
+        question = input("\nEnter your question (or 'quit' to exit): ")
+        if question.lower() == 'quit':
+            break
+
+        print("\nProcessing your question...")
+        answer = qa_agent.run(question)
+        print(f"\nQuestion: {question}")
+        print(f"Answer: {answer}")
 
 if __name__ == "__main__":
     main()
 ```
 
----
+### **4. Project Structure**
 
-### **4. Running the Project**
+```
+your_project/
+├── data/                  # Place all JSON files here
+│   ├── sample1.json
+│   ├── sample2.json
+│   └── ...
+├── cache/
+│   └── chroma_db/        # ChromaDB persistence directory
+├── models/
+│   └── model_loader.py
+├── database/
+│   └── vector_store.py
+├── agents/
+│   └── qa_agent.py
+├── utils/
+│   └── json_processor.py
+├── config.py
+└── main.py
+```
 
-1. Place your JSON file in the `data/` directory.
-2. Update the `config.py` file with the correct paths and settings.
-3. Run the `main.py` script:
+### **5. Key Changes and Features**
 
+1. **Directory Processing**: The code now processes all JSON files in the `data` directory.
+2. **Error Handling**: Added robust error handling for JSON file loading.
+3. **Progress Feedback**: Added more detailed progress messages.
+4. **Interactive Mode**: Added an interactive question-answering loop.
+5. **Automatic Directory Creation**: The cache directory is created automatically.
+
+### **6. Running the Project**
+
+1. Create a `data` directory and place all your JSON files there.
+2. Run the main script:
 ```bash
 python main.py
 ```
 
----
+### **7. Example Usage**
 
-### **5. Next Steps**
+```bash
+$ python main.py
+Loading JSON data from directory...
+Loading data/sample1.json...
+Loading data/sample2.json...
+Loaded 6 documents from JSON files
+Extracted 6 text documents
+Loading models...
+Generating embeddings...
+Initializing ChromaDB...
+Adding documents to ChromaDB...
+Creating QA agent...
 
-- **Testing and Debugging**: Test the pipeline with your JSON data and refine the code as needed.
-- **Scaling**: If your dataset is large, consider optimizing the embedding generation and database operations.
-- **Extending Functionality**: Add more agents or integrate additional features like summarization or document clustering.
+Enter your question (or 'quit' to exit): What is Python?
+Processing your question...
 
-Let me know if you need help with any specific part of this implementation!
+Question: What is Python?
+Answer: Python is a versatile programming language used for web development, data analysis, artificial intelligence, and more.
+
+Enter your question (or 'quit' to exit): quit
+```
+
+### **8. Notes**
+
+- All JSON files in the `data` directory will be processed automatically.
+- The ChromaDB data will be persistently stored in `cache/chroma_db`.
+- The interactive mode allows you to ask multiple questions without restarting the program.
+- Each JSON file should contain an array of objects with a "content" field (or specify a different key in `extract_text_from_json`).
+
+Let me know if you need any clarification or have questions about the implementation!
