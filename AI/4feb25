@@ -1,102 +1,20 @@
+Here is the complete and updated `main.py` file that addresses the following issues:
 
-To address the issue of re-embedding data every time the program starts, we can implement a mechanism to check if the data has changed before embedding it into ChromaDB. This will avoid unnecessary re-embedding and improve performance.
+1. **Avoid re-embedding unchanged data**:
+   - The program now checks for changes in JSON files using file hashes and only embeds new or modified files.
 
-Here’s how we can achieve this:
+2. **Handle `AttributeError` for JSON structure**:
+   - The code now handles both dictionary and list structures in JSON files.
 
----
+3. **Fix `ValueError: Requested tokens exceed context window`**:
+   - The input to the LLM is truncated to fit within the context window.
 
-### **Solution Overview**
-1. **Hashing JSON Files**:
-   - Compute a hash of the JSON files' contents to detect changes.
-   - Store the hash in a metadata file (e.g., `hashes.json`).
-
-2. **Compare Hashes**:
-   - On program startup, compare the current hash of each JSON file with the stored hash.
-   - Only re-embed files that have changed or are new.
-
-3. **Update Hashes**:
-   - After embedding, update the metadata file with the new hashes.
+4. **Deprecation warning for `BaseLLM.__call__`**:
+   - The `invoke` method is used instead of the deprecated `__call__`.
 
 ---
 
-### **Updated Code**
-
-#### **1. `database/vector_store.py`**
-This updated function includes logic to check for changes in JSON files before embedding.
-
-```python
-import os
-import json
-import hashlib
-from langchain_chroma import Chroma
-from typing import List, Any
-
-
-def calculate_file_hash(file_path: str) -> str:
-    """Calculate the hash of a file's contents."""
-    hasher = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        hasher.update(f.read())
-    return hasher.hexdigest()
-
-
-def load_hashes(hash_file: str) -> dict:
-    """Load stored hashes from a file."""
-    if os.path.exists(hash_file):
-        with open(hash_file, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def save_hashes(hash_file: str, hashes: dict):
-    """Save hashes to a file."""
-    with open(hash_file, "w") as f:
-        json.dump(hashes, f, indent=4)
-
-
-def embed_and_store_data(
-    json_files: List[str], embeddings, persist_dir: str, hash_file: str
-) -> Chroma:
-    """Embed and store data in ChromaDB, only for changed or new files."""
-    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
-
-    # Load existing hashes
-    stored_hashes = load_hashes(hash_file)
-    current_hashes = {}
-
-    for file_path in json_files:
-        # Calculate the current hash of the file
-        current_hash = calculate_file_hash(file_path)
-        current_hashes[file_path] = current_hash
-
-        # Check if the file has changed or is new
-        if file_path not in stored_hashes or stored_hashes[file_path] != current_hash:
-            print(f"Embedding data from {file_path} (new or changed)...")
-            with open(file_path, "r") as f:
-                data = json.load(f)
-
-                # Handle both dict and list structures
-                if isinstance(data, dict):
-                    for item in data.get("vulnerabilities", []):
-                        text = json.dumps(item)
-                        vectorstore.add_texts([text])
-                elif isinstance(data, list):
-                    for item in data:
-                        text = json.dumps(item)
-                        vectorstore.add_texts([text])
-        else:
-            print(f"Skipping {file_path} (no changes detected).")
-
-    # Save updated hashes
-    save_hashes(hash_file, current_hashes)
-
-    return vectorstore
-```
-
----
-
-#### **2. `main.py`**
-Update the `main.py` file to use the new `embed_and_store_data` function.
+### **Complete `main.py`**
 
 ```python
 import sys
@@ -104,7 +22,7 @@ import os
 import contextlib
 from langchain.llms import LlamaCpp
 from langchain.embeddings import HuggingFaceEmbeddings
-from utils.json_processor import load_all_json_files
+from utils.json_processor import load_all_json_files, find_data_by_keyword, find_cve_from_snyk
 from database.vector_store import embed_and_store_data
 import config
 
@@ -123,6 +41,40 @@ def suppress_stdout_stderr():
         sys.stdout = stdout
         sys.stderr = stderr
         null_device.close()
+
+
+def summarize_data(llm, data):
+    """Summarize the given data using an LLM."""
+    combined_text = "\n".join([json.dumps(item, indent=2) for item in data])
+    # Truncate the text to fit within the LLM's context window
+    max_tokens = 512  # Adjust based on your LLM's context window
+    truncated_text = combined_text[:max_tokens]
+    summarization_prompt = f"Summarize the following data:\n\n{truncated_text}\n\nSummary:"
+    return llm.invoke(summarization_prompt)
+
+
+def process_query(query, vectorstore, json_files, llm):
+    """Process a query and return a summarized response."""
+    results = []
+
+    # Check if the query is a SNYK ID
+    cve_ids = find_cve_from_snyk(query, json_files)
+    if cve_ids:
+        for cve_id in cve_ids:
+            # Search for CVE data in JSON files
+            cve_results = find_data_by_keyword(cve_id, json_files)
+            results.extend(cve_results)
+
+    # If no CVE IDs found, treat the query as a general keyword
+    if not results:
+        results = find_data_by_keyword(query, json_files)
+
+    # Summarize the results
+    if results:
+        summary = summarize_data(llm, results)
+        return summary
+    else:
+        return "No relevant data found for your query."
 
 
 def main():
@@ -168,9 +120,9 @@ def main():
             break
 
         print("\nProcessing your query...")
-        # Add your query processing logic here
+        response = process_query(query, vectorstore, json_files, llm)
         print("\n=== Summary ===")
-        print("Query processing not implemented yet.")
+        print(response)
 
 
 if __name__ == "__main__":
@@ -179,27 +131,27 @@ if __name__ == "__main__":
 
 ---
 
-### **How It Works**
+### **Key Features**
 
-1. **Hash Calculation**:
-   - Each JSON file's hash is calculated using the `calculate_file_hash` function.
+1. **Avoid Re-Embedding Unchanged Data**:
+   - The `embed_and_store_data` function in `vector_store.py` checks for changes in JSON files using file hashes and only embeds new or modified files.
 
-2. **Hash Comparison**:
-   - The current hash of each file is compared with the stored hash in `hashes.json`.
-   - If the file is new or has changed, it is re-embedded into ChromaDB.
+2. **Handle JSON Structure**:
+   - The program handles both dictionary and list structures in JSON files.
 
-3. **Hash Storage**:
-   - After embedding, the updated hashes are saved back to `hashes.json`.
+3. **Truncate Input for LLM**:
+   - The `summarize_data` function truncates the input text to fit within the LLM's context window, avoiding the `ValueError`.
 
-4. **Skipping Unchanged Files**:
-   - Files that have not changed are skipped, avoiding unnecessary re-embedding.
+4. **Deprecation Fix**:
+   - The `invoke` method is used instead of the deprecated `__call__`.
 
 ---
 
-### **Testing the Solution**
+### **Testing the Code**
 
 1. **Initial Run**:
-   - Run the program with a set of JSON files. All files will be embedded, and their hashes will be stored in `hashes.json`.
+   - Place JSON files in the `data/` directory and run the program.
+   - All files will be embedded, and their hashes will be stored in `hashes.json`.
 
 2. **Subsequent Runs**:
    - Run the program again without modifying the files. The program should skip embedding for all files.
@@ -209,6 +161,9 @@ if __name__ == "__main__":
 
 4. **New Files**:
    - Add a new JSON file and run the program. The new file should be embedded.
+
+5. **Query Testing**:
+   - Test queries for SNYK IDs, CVE IDs, and keywords. The program should return summarized results or indicate if no relevant data is found.
 
 ---
 
@@ -235,6 +190,14 @@ if __name__ == "__main__":
   Data embedding completed successfully!
   ```
 
----
+- For queries:
+  ```
+  Enter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: SNYK-JAVA-COMMONSIO-8161190
 
-Let me know if you encounter any issues or need further assistance!
+  Processing your query...
+
+  === Summary ===
+  <Summarized response based on the data>
+  ```
+
+Let me know if you encounter any further issues!
