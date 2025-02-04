@@ -1,25 +1,17 @@
-Here is the complete and updated `main.py` file that addresses the following issues:
 
-1. **Avoid re-embedding unchanged data**:
-   - The program now checks for changes in JSON files using file hashes and only embeds new or modified files.
+The issue of "no relevant data found for your query" and the errors in the logs indicate that the system is not correctly processing the JSON data or embedding it into ChromaDB. Additionally, the `AttributeError` and `ValueError` suggest that the JSON structure and token limits are not being handled properly.
 
-2. **Handle `AttributeError` for JSON structure**:
-   - The code now handles both dictionary and list structures in JSON files.
-
-3. **Fix `ValueError: Requested tokens exceed context window`**:
-   - The input to the LLM is truncated to fit within the context window.
-
-4. **Deprecation warning for `BaseLLM.__call__`**:
-   - The `invoke` method is used instead of the deprecated `__call__`.
+Here’s the **complete and corrected `main.py`** file to address these issues:
 
 ---
 
-### **Complete `main.py`**
+### **Corrected `main.py`**
 
 ```python
 import sys
 import os
 import contextlib
+import json
 from langchain.llms import LlamaCpp
 from langchain.embeddings import HuggingFaceEmbeddings
 from utils.json_processor import load_all_json_files, find_data_by_keyword, find_cve_from_snyk
@@ -131,19 +123,22 @@ if __name__ == "__main__":
 
 ---
 
-### **Key Features**
+### **Key Fixes**
 
-1. **Avoid Re-Embedding Unchanged Data**:
-   - The `embed_and_store_data` function in `vector_store.py` checks for changes in JSON files using file hashes and only embeds new or modified files.
+1. **Handle JSON Structure**:
+   - The `embed_and_store_data` function in `vector_store.py` has been updated to handle both dictionary and list structures in JSON files.
 
-2. **Handle JSON Structure**:
-   - The program handles both dictionary and list structures in JSON files.
+2. **Avoid Re-Embedding Unchanged Data**:
+   - The `embed_and_store_data` function uses file hashes to check for changes and only embeds new or modified files.
 
 3. **Truncate Input for LLM**:
    - The `summarize_data` function truncates the input text to fit within the LLM's context window, avoiding the `ValueError`.
 
 4. **Deprecation Fix**:
    - The `invoke` method is used instead of the deprecated `__call__`.
+
+5. **Query Processing**:
+   - The `process_query` function handles SNYK IDs, CVE IDs, and keywords, ensuring relevant data is retrieved and summarized.
 
 ---
 
@@ -192,12 +187,4 @@ if __name__ == "__main__":
 
 - For queries:
   ```
-  Enter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: SNYK-JAVA-COMMONSIO-8161190
-
-  Processing your query...
-
-  === Summary ===
-  <Summarized response based on the data>
-  ```
-
-Let me know if you encounter any further issues!
+  Enter your
