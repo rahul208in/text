@@ -1,21 +1,27 @@
 
-Based on the provided images and the issues described, I have updated the code to address the following:
+### Analysis of Issues
+
+From the provided images and error messages, the following issues are identified:
 
 1. **`AttributeError: 'list' object has no attribute 'get'`**:
-   - This error occurs because some JSON files are lists, not dictionaries. The code now handles both cases.
+   - This occurs because the code assumes that all JSON files are dictionaries with a `vulnerabilities` key. However, some JSON files are lists or have different structures.
 
-2. **`Query processing not implemented yet`**:
-   - The query processing logic has been implemented to handle SNYK IDs, CVE IDs, and general keyword searches.
+2. **Deprecation Warning for `Chroma`**:
+   - The `Chroma` class is deprecated in `langchain` and should be imported from `langchain_chroma`.
 
-3. **Deprecation Warning for `Chroma`**:
-   - The `Chroma` class is now imported from `langchain_chroma`.
+3. **Query Processing Not Implemented**:
+   - The query processing logic is incomplete in the `main.py` file.
 
-4. **Suppressing `stdout` and `stderr`**:
-   - The `suppress_stdout_stderr` function is used to suppress unnecessary output during embedding.
+4. **`ValueError: Requested tokens exceed context window`**:
+   - The LLM is being passed a prompt that exceeds its maximum token limit.
 
 ---
 
-### **Complete Updated Code**
+### Updated Code
+
+Below is the complete updated code to address all the issues.
+
+---
 
 #### **1. `config.py`**
 ```python
@@ -139,8 +145,11 @@ def suppress_stdout_stderr():
 def summarize_data(llm, data):
     """Summarize the given data using an LLM."""
     combined_text = "\n".join([json.dumps(item, indent=2) for item in data])
-    summarization_prompt = f"Summarize the following data:\n\n{combined_text}\n\nSummary:"
-    return llm(summarization_prompt)
+    # Truncate the text to fit within the LLM's context window
+    max_tokens = 512  # Adjust based on your LLM's context window
+    truncated_text = combined_text[:max_tokens]
+    summarization_prompt = f"Summarize the following data:\n\n{truncated_text}\n\nSummary:"
+    return llm.invoke(summarization_prompt)
 
 
 def process_query(query, vectorstore, json_files, llm):
@@ -216,25 +225,23 @@ if __name__ == "__main__":
 
 ---
 
-### **How It Works**
+### Key Fixes
 
-1. **Data Loading**:
-   - All JSON files in the `data/` directory are loaded, regardless of their structure.
+1. **`AttributeError` Fix**:
+   - The `embed_and_store_data` function now handles both dictionaries and lists in JSON files.
 
-2. **Embedding**:
-   - Data is embedded into ChromaDB, handling both dictionaries and lists.
+2. **Deprecation Warning**:
+   - The `Chroma` class is imported from `langchain_chroma`.
 
 3. **Query Processing**:
-   - If the query is a SNYK ID, the associated CVE(s) are found, and related data is retrieved.
-   - If the query is a general keyword, matching data is retrieved.
-   - Results are summarized using the Mistral LLM.
+   - The `process_query` function is implemented to handle SNYK IDs, CVE IDs, and keywords.
 
-4. **Interactive Querying**:
-   - Users can query the system with a SNYK ID, CVE ID, or keyword.
+4. **Token Limit**:
+   - The `summarize_data` function truncates the input text to fit within the LLM's context window.
 
 ---
 
-### **Testing**
+### Testing
 
 1. **Test with JSON Files**:
    - Place JSON files with and without `vulnerabilities` in the `data/` directory.
