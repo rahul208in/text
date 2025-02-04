@@ -1,72 +1,118 @@
 
-Yes, I understand your requirement. Here's a summary of what you want to achieve:
+Understood! You want the system to:
 
-1. **Input JSON File**:
-   - You have a JSON file (like the one in the image) that contains vulnerabilities with `SNYK` IDs and associated `CVE` IDs (under the `identifiers` field).
-   - For example, the `SNYK` ID is `SNYK-JAVA-COMMONSIO-841101` and the associated `CVE` ID is `CVE-2021-29425`.
+1. **Search by any keyword** across all JSON files in the `data/` directory.
+2. **Handle SNYK IDs**:
+   - If a SNYK ID is provided, extract the associated CVE(s) from the `identifiers` field.
+   - Use the CVE(s) to find related data in other JSON files.
+3. **Summarize and return results**:
+   - Retrieve all relevant information (from SNYK, CVE, or keyword search).
+   - Summarize the results using the Mistral LLM.
 
-2. **ChromaDB Storage**:
-   - Both the `SNYK` and `CVE` data are stored in **ChromaDB** as embeddings.
-   - The `SNYK` data contains general vulnerability information, while the `CVE` data contains detailed descriptions of the vulnerabilities.
-
-3. **Query Workflow**:
-   - When querying with a `SNYK` ID, the system should:
-     - Extract the associated `CVE` ID from the `SNYK` data.
-     - Use the `CVE` ID to retrieve detailed information from ChromaDB.
-   - When querying with a `CVE` ID, the system should directly retrieve the relevant information from ChromaDB.
-
-4. **Summarization**:
-   - The retrieved information (from both `SNYK` and `CVE` data) should be summarized using the **Mistral 7B LLM** to provide a concise and meaningful response.
-
-5. **Output**:
-   - The system should display the summarized information along with the source details.
+The file structure remains the same as in the second image, and the `config.py` file will have `JSON_FILES_DIR = "data"`.
 
 ---
 
-### **Proposed Solution**
+### **Updated Implementation**
 
-To implement this, we will:
-1. **Store the `SNYK` and `CVE` data in ChromaDB**.
-2. **Create a query processor** that:
-   - Extracts the `CVE` ID from the `SNYK` data.
-   - Retrieves relevant information from ChromaDB.
-   - Summarizes the results using the Mistral LLM.
-3. **Provide an interactive interface** for querying.
-
----
-
-### **Implementation**
-
-#### **1. Updated `main.py`**
+#### **1. `config.py`**
+This file remains unchanged except for the `JSON_FILES_DIR` variable.
 
 ```python
+# config.py
+
+# Directory containing JSON files
+JSON_FILES_DIR = "data"
+
+# Path to the Mistral 7B LLM model
+LLM_MODEL_PATH = "./models/mistral-7b"
+
+# Path to the embedding model
+EMBEDDING_MODEL_PATH = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Path to the ChromaDB persistence directory
+CHROMA_DB_DIR = "./cache/chroma_db"
+```
+
+---
+
+#### **2. `utils/json_processor.py`**
+This file is updated to handle keyword searches and SNYK-to-CVE mapping.
+
+```python
+import os
 import json
+from typing import List, Dict, Any
+
+
+def load_all_json_files(directory: str) -> List[Dict[str, Any]]:
+    """Load all JSON files from a directory."""
+    json_data = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".json"):
+            with open(os.path.join(directory, filename), "r") as f:
+                data = json.load(f)
+                json_data.append(data)
+    return json_data
+
+
+def find_data_by_keyword(keyword: str, json_files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Search for any keyword in all JSON files."""
+    results = []
+    for file in json_files:
+        for item in file.get("vulnerabilities", []):
+            if keyword.lower() in json.dumps(item).lower():
+                results.append(item)
+    return results
+
+
+def find_cve_from_snyk(snyk_id: str, json_files: List[Dict[str, Any]]) -> List[str]:
+    """Find CVE(s) associated with a given SNYK ID."""
+    cve_ids = []
+    for file in json_files:
+        for item in file.get("vulnerabilities", []):
+            if item.get("id") == snyk_id:
+                cve_ids.extend(item.get("identifiers", {}).get("CVE", []))
+    return cve_ids
+```
+
+---
+
+#### **3. `database/vector_store.py`**
+This file remains the same, as it handles embedding and storing data in ChromaDB.
+
+```python
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from typing import List, Dict, Any
+import json
+
+
+def embed_and_store_data(json_files: List[Dict[str, Any]], embeddings, persist_dir: str) -> Chroma:
+    """Embed and store data in ChromaDB."""
+    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
+    for file in json_files:
+        for item in file.get("vulnerabilities", []):
+            text = json.dumps(item)  # Convert the JSON object to a string
+            vectorstore.add_texts([text])
+    return vectorstore
+```
+
+---
+
+#### **4. `main.py`**
+This file is updated to handle keyword searches and SNYK-to-CVE mapping.
+
+```python
+import os
 from langchain.llms import LlamaCpp
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
-
-
-def load_json_file(file_path):
-    """Load a JSON file."""
-    with open(file_path, "r") as f:
-        return json.load(f)
-
-
-def embed_and_store_data(data, embeddings, persist_dir):
-    """Embed and store data in ChromaDB."""
-    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
-    for item in data:
-        text = json.dumps(item)  # Convert the JSON object to a string
-        vectorstore.add_texts([text])
-    return vectorstore
-
-
-def retrieve_data_by_cve(cve_id, vectorstore):
-    """Retrieve data from ChromaDB using a CVE ID."""
-    results = vectorstore.similarity_search(cve_id)
-    return [json.loads(doc.page_content) for doc in results]
+from utils.json_processor import load_all_json_files, find_data_by_keyword, find_cve_from_snyk
+from database.vector_store import embed_and_store_data
+import config
 
 
 def summarize_data(llm, data):
@@ -81,23 +127,21 @@ def summarize_data(llm, data):
     return summary
 
 
-def process_query(query, vectorstore, snyk_data, llm):
+def process_query(query, vectorstore, json_files, llm):
     """Process a query and return a summarized response."""
     results = []
 
     # Check if the query is a SNYK ID
-    for item in snyk_data:
-        if item.get("id") == query:
-            # Extract the CVE ID from the SNYK data
-            cve_id = item.get("identifiers", {}).get("CVE", [None])[0]
-            if cve_id:
-                # Retrieve data from ChromaDB using the CVE ID
-                results = retrieve_data_by_cve(cve_id, vectorstore)
-            break
+    cve_ids = find_cve_from_snyk(query, json_files)
+    if cve_ids:
+        for cve_id in cve_ids:
+            # Search for CVE data in JSON files
+            cve_results = find_data_by_keyword(cve_id, json_files)
+            results.extend(cve_results)
 
-    # If no results found, try searching directly with the query
+    # If no CVE IDs found, treat the query as a general keyword
     if not results:
-        results = retrieve_data_by_cve(query, vectorstore)
+        results = find_data_by_keyword(query, json_files)
 
     # Summarize the results
     if results:
@@ -108,22 +152,14 @@ def process_query(query, vectorstore, snyk_data, llm):
 
 
 def main():
-    # Paths and configurations
-    SNYK_FILE_PATH = "./data/snyk_data.json"  # Path to the SNYK JSON file
-    CVE_FILE_PATH = "./data/cve_data.json"  # Path to the CVE JSON file
-    LLM_MODEL_PATH = "./models/mistral-7b"  # Path to the Mistral LLM model
-    EMBEDDING_MODEL_PATH = "sentence-transformers/all-MiniLM-L6-v2"  # GTE embedding model
-    CHROMA_DB_DIR = "./chromadb"  # Directory for ChromaDB
-
     # Load JSON files
     print("Loading JSON files...")
-    snyk_data = load_json_file(SNYK_FILE_PATH)
-    cve_data = load_json_file(CVE_FILE_PATH)
+    json_files = load_all_json_files(config.JSON_FILES_DIR)
 
     # Initialize the LLM
     print("Initializing the LLM...")
     llm = LlamaCpp(
-        model_path=LLM_MODEL_PATH,
+        model_path=config.LLM_MODEL_PATH,
         temperature=0.7,
         max_tokens=2000,
         top_p=0.9,
@@ -133,13 +169,13 @@ def main():
     # Initialize the embedding model
     print("Initializing the embedding model...")
     embeddings = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL_PATH,
+        model_name=config.EMBEDDING_MODEL_PATH,
         model_kwargs={'device': 'cpu'}
     )
 
     # Embed and store data in ChromaDB
     print("Embedding and storing data in ChromaDB...")
-    vectorstore = embed_and_store_data(snyk_data + cve_data, embeddings, CHROMA_DB_DIR)
+    vectorstore = embed_and_store_data(json_files, embeddings, config.CHROMA_DB_DIR)
 
     # Interactive query loop
     print("\nReady for queries!")
@@ -149,7 +185,7 @@ def main():
             break
 
         print("\nProcessing your query...")
-        response = process_query(query, vectorstore, snyk_data, llm)
+        response = process_query(query, vectorstore, json_files, llm)
         print("\n=== Summary ===")
         print(response)
 
@@ -160,58 +196,47 @@ if __name__ == "__main__":
 
 ---
 
-### **2. Example JSON Files**
-
-#### `data/snyk_data.json`
-```json
-[
-    {
-        "id": "SNYK-JAVA-COMMONSIO-841101",
-        "identifiers": {
-            "CVE": ["CVE-2021-29425"]
-        },
-        "description": "Uncontrolled Resource Consumption in Apache Commons IO."
-    }
-]
-```
-
-#### `data/cve_data.json`
-```json
-[
-    {
-        "CVE": "CVE-2021-29425",
-        "details": "This CVE affects Apache Commons IO versions 2.4 to 2.6 and allows remote attackers to cause a denial of service."
-    }
-]
-```
-
----
-
 ### **How It Works**
 
-1. **Data Storage**:
-   - Both `SNYK` and `CVE` data are embedded and stored in ChromaDB.
+1. **Data Loading**:
+   - All JSON files in the `data/` directory are loaded.
 
 2. **Query Processing**:
-   - If the query is a `SNYK` ID, the system extracts the associated `CVE` ID and retrieves detailed information from ChromaDB.
-   - If the query is a `CVE` ID, the system directly retrieves the relevant information from ChromaDB.
+   - If the query is a SNYK ID:
+     - Extract associated CVE(s) from the `identifiers` field.
+     - Search for data related to the CVE(s) in all JSON files.
+   - If the query is a general keyword:
+     - Search for the keyword in all JSON files.
 
 3. **Summarization**:
    - The retrieved data is summarized using the Mistral LLM.
 
 4. **Interactive Querying**:
-   - The user can query the system with a `SNYK` ID, `CVE` ID, or a general keyword.
+   - The user can query the system with a SNYK ID, CVE ID, or any keyword.
 
 ---
 
-### **Example Query**
+### **Example Queries**
 
-#### Input:
+#### Query 1: SNYK ID
+Input:
 ```
 SNYK-JAVA-COMMONSIO-841101
 ```
 
-#### Output:
+Output:
+```
+=== Summary ===
+The vulnerability CVE-2021-29425 affects Apache Commons IO versions 2.4 to 2.6. It allows remote attackers to cause a denial of service due to uncontrolled resource consumption.
+```
+
+#### Query 2: Keyword
+Input:
+```
+denial of service
+```
+
+Output:
 ```
 === Summary ===
 The vulnerability CVE-2021-29425 affects Apache Commons IO versions 2.4 to 2.6. It allows remote attackers to cause a denial of service due to uncontrolled resource consumption.
