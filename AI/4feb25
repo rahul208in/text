@@ -1,0 +1,264 @@
+To implement the updated system, I'll provide the **complete updated files** you need to modify or create. These files will integrate the new functionality for handling multiple JSON files, cross-referencing data, embedding data in ChromaDB, and summarizing responses using the Mistral LLM.
+
+---
+
+### **1. Directory Structure**
+
+Here’s the updated directory structure for your project:
+
+```
+project/
+│
+├── data/                     # Directory for JSON files
+│   ├── snyk_data.json        # Example JSON file with SNYK IDs and CVE IDs
+│   ├── cve_data.json         # Example JSON file with detailed CVE data
+│
+├── models/                   # Directory for models
+│   ├── mistral-7b/           # Mistral 7B LLM model
+│
+├── chromadb/                 # Directory for ChromaDB persistence
+│
+├── utils/                    # Utility functions
+│   ├── json_processor.py     # JSON loading and cross-referencing
+│
+├── database/                 # Vector database operations
+│   ├── vector_store.py       # ChromaDB embedding and storage
+│
+├── main.py                   # Main entry point for the application
+│
+└── requirements.txt          # Python dependencies
+```
+
+---
+
+### **2. Updated Files**
+
+#### **2.1 `utils/json_processor.py`**
+
+This file contains utility functions for loading JSON files and cross-referencing data.
+
+```python
+import os
+import json
+from typing import List, Dict, Any
+
+
+def load_all_json_files(directory: str) -> List[Dict[str, Any]]:
+    """Load all JSON files from a directory."""
+    json_data = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".json"):
+            with open(os.path.join(directory, filename), "r") as f:
+                data = json.load(f)
+                json_data.append(data)
+    return json_data
+
+
+def find_data_by_cve(cve_id: str, json_files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Find all data related to a given CVE ID across multiple JSON files."""
+    results = []
+    for file in json_files:
+        for item in file:
+            if isinstance(item, dict) and "CVE" in item and item["CVE"] == cve_id:
+                results.append(item)
+    return results
+
+
+def find_data_by_snyk_id(snyk_id: str, json_files: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Find all data related to a given SNYK ID across multiple JSON files."""
+    results = []
+    for file in json_files:
+        for item in file:
+            if isinstance(item, dict) and "id" in item and item["id"] == snyk_id:
+                results.append(item)
+    return results
+```
+
+---
+
+#### **2.2 `database/vector_store.py`**
+
+This file handles embedding data and storing it in ChromaDB.
+
+```python
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+from typing import List, Dict, Any
+
+
+def embed_and_store_data(json_files: List[Dict[str, Any]], embeddings, persist_dir: str) -> Chroma:
+    """Embed and store data in ChromaDB."""
+    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
+    for file in json_files:
+        for item in file:
+            if isinstance(item, dict):
+                text = json.dumps(item)  # Convert the JSON object to a string
+                vectorstore.add_texts([text])
+    return vectorstore
+```
+
+---
+
+#### **2.3 `main.py`**
+
+This is the main entry point for the application. It ties everything together.
+
+```python
+import os
+from langchain.llms import LlamaCpp
+from utils.json_processor import load_all_json_files, find_data_by_cve, find_data_by_snyk_id
+from database.vector_store import embed_and_store_data
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.vectorstores import Chroma
+
+
+def summarize_data(llm, data: List[Dict[str, Any]]) -> str:
+    """Summarize the given data using an LLM."""
+    combined_text = "\n".join([json.dumps(item, indent=2) for item in data])
+    summarization_prompt = PromptTemplate(
+        template="Summarize the following data:\n\n{text}\n\nSummary:",
+        input_variables=["text"]
+    )
+    summarization_chain = LLMChain(llm=llm, prompt=summarization_prompt)
+    summary = summarization_chain.run({"text": combined_text})
+    return summary
+
+
+def process_query(query: str, vectorstore: Chroma, json_files: List[Dict[str, Any]], llm) -> str:
+    """Process a query and return a summarized response."""
+    results = []
+
+    # Check if the query is a CVE ID
+    if query.startswith("CVE-"):
+        results = find_data_by_cve(query, json_files)
+
+    # Check if the query is a SNYK ID
+    elif query.startswith("SNYK-"):
+        snyk_data = find_data_by_snyk_id(query, json_files)
+        results.extend(snyk_data)
+
+        # If SNYK data contains a CVE ID, find related CVE data
+        for item in snyk_data:
+            if "CVE" in item:
+                cve_results = find_data_by_cve(item["CVE"], json_files)
+                results.extend(cve_results)
+
+    # General keyword or sentence search
+    else:
+        query_embedding = vectorstore.embedding_function.embed_query(query)
+        docs = vectorstore.similarity_search_by_vector(query_embedding)
+        results = [json.loads(doc.page_content) for doc in docs]
+
+    # Summarize the results
+    if results:
+        summary = summarize_data(llm, results)
+        return summary
+    else:
+        return "No relevant data found for your query."
+
+
+def main():
+    # Paths and configurations
+    JSON_FILES_DIR = "./data"  # Directory containing JSON files
+    LLM_MODEL_PATH = "./models/mistral-7b"  # Path to the LLM model
+    EMBEDDING_MODEL_PATH = "sentence-transformers/all-MiniLM-L6-v2"  # GTE embedding model
+    CHROMA_DB_DIR = "./chromadb"  # Directory for ChromaDB
+
+    # Load JSON files
+    print("Loading JSON files...")
+    json_files = load_all_json_files(JSON_FILES_DIR)
+
+    # Initialize the LLM
+    print("Initializing the LLM...")
+    llm = LlamaCpp(
+        model_path=LLM_MODEL_PATH,
+        temperature=0.7,
+        max_tokens=2000,
+        top_p=0.9,
+        verbose=True
+    )
+
+    # Initialize the embedding model
+    print("Initializing the embedding model...")
+    embeddings = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL_PATH,
+        model_kwargs={'device': 'cpu'}
+    )
+
+    # Embed and store data in ChromaDB
+    print("Embedding and storing data in ChromaDB...")
+    vectorstore = embed_and_store_data(json_files, embeddings, CHROMA_DB_DIR)
+
+    # Interactive query loop
+    print("\nReady for queries!")
+    while True:
+        query = input("\nEnter your query (CVE ID, SNYK ID, or keyword) or 'quit' to exit: ")
+        if query.lower() == "quit":
+            break
+
+        print("\nProcessing your query...")
+        response = process_query(query, vectorstore, json_files, llm)
+        print("\n=== Summary ===")
+        print(response)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### **3. Example JSON Files**
+
+#### `data/snyk_data.json`
+```json
+[
+    {
+        "id": "SNYK-12345",
+        "CVE": "CVE-2023-1234",
+        "description": "A vulnerability in XYZ software."
+    }
+]
+```
+
+#### `data/cve_data.json`
+```json
+[
+    {
+        "CVE": "CVE-2023-1234",
+        "details": "This CVE affects XYZ software version 1.2.3 and allows remote code execution."
+    }
+]
+```
+
+---
+
+### **4. `requirements.txt`**
+
+```plaintext
+langchain
+chromadb
+llama-cpp-python
+sentence-transformers
+torch
+```
+
+---
+
+### **How to Run**
+
+1. Place your JSON files in the `data/` directory.
+2. Install the dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Run the application:
+   ```bash
+   python main.py
+   ```
+
+---
+
+Let me know if you need further clarification or additional features!
