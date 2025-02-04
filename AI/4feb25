@@ -1,29 +1,124 @@
 
-The errors and issues in your project are caused by the following:
+### Analysis of Issues
+
+From the provided images and error messages, the following issues are identified:
 
 1. **`AttributeError: 'list' object has no attribute 'get'`**:
-   - This happens because the JSON file structure is not being handled properly. Some files are lists, while others are dictionaries.
+   - This occurs because the code assumes that all JSON files are dictionaries with a `vulnerabilities` key. However, some JSON files are lists or have different structures.
 
 2. **Deprecation Warning for `Chroma`**:
-   - The `Chroma` class is deprecated in `langchain`. You need to use the updated `langchain_chroma` package.
+   - The `Chroma` class is deprecated in `langchain` and should be imported from `langchain_chroma`.
 
-3. **`ValueError: Requested tokens exceed context window`**:
-   - The input text to the LLM exceeds the maximum token limit. This needs to be truncated.
+3. **Query Processing Not Implemented**:
+   - The query processing logic is incomplete in the `main.py` file.
 
-4. **Query Results Not Found**:
-   - The query processing logic is not correctly retrieving data from the JSON files or ChromaDB.
+4. **`ValueError: Requested tokens exceed context window`**:
+   - The LLM is being passed a prompt that exceeds its maximum token limit.
 
 ---
 
-### **Updated and Complete Code**
+### Updated Code
 
-Below is the corrected `main.py` file that resolves all the issues.
+Below is the complete updated code to address all the issues.
 
+---
+
+#### **1. `config.py`**
+```python
+# config.py
+
+# Directory containing JSON files
+JSON_FILES_DIR = "data"
+
+# Path to the Mistral 7B LLM model
+LLM_MODEL_PATH = "./models/mistral-7b"
+
+# Path to the embedding model
+EMBEDDING_MODEL_PATH = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Path to the ChromaDB persistence directory
+CHROMA_DB_DIR = "./cache/chroma_db"
+```
+
+---
+
+#### **2. `utils/json_processor.py`**
+```python
+import os
+import json
+from typing import List, Dict, Any
+
+
+def load_all_json_files(directory: str) -> List[Any]:
+    """Load all JSON files from a directory."""
+    json_data = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".json"):
+            with open(os.path.join(directory, filename), "r") as f:
+                data = json.load(f)
+                json_data.append(data)
+    return json_data
+
+
+def find_data_by_keyword(keyword: str, json_files: List[Any]) -> List[Dict[str, Any]]:
+    """Search for any keyword in all JSON files."""
+    results = []
+    for file in json_files:
+        if isinstance(file, dict):
+            for item in file.get("vulnerabilities", []):
+                if keyword.lower() in json.dumps(item).lower():
+                    results.append(item)
+        elif isinstance(file, list):
+            for item in file:
+                if keyword.lower() in json.dumps(item).lower():
+                    results.append(item)
+    return results
+
+
+def find_cve_from_snyk(snyk_id: str, json_files: List[Any]) -> List[str]:
+    """Find CVE(s) associated with a given SNYK ID."""
+    cve_ids = []
+    for file in json_files:
+        if isinstance(file, dict):
+            for item in file.get("vulnerabilities", []):
+                if item.get("id") == snyk_id:
+                    cve_ids.extend(item.get("identifiers", {}).get("CVE", []))
+    return cve_ids
+```
+
+---
+
+#### **3. `database/vector_store.py`**
+```python
+from langchain_chroma import Chroma
+import json
+from typing import List, Any
+
+
+def embed_and_store_data(json_files: List[Any], embeddings, persist_dir: str) -> Chroma:
+    """Embed and store data in ChromaDB."""
+    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
+
+    for file in json_files:
+        if isinstance(file, dict):
+            for item in file.get("vulnerabilities", []):
+                text = json.dumps(item)  # Convert the JSON object to a string
+                vectorstore.add_texts([text])
+        elif isinstance(file, list):
+            for item in file:
+                text = json.dumps(item)  # Convert the JSON object to a string
+                vectorstore.add_texts([text])
+
+    return vectorstore
+```
+
+---
+
+#### **4. `main.py`**
 ```python
 import sys
 import os
 import contextlib
-import json
 from langchain.llms import LlamaCpp
 from langchain.embeddings import HuggingFaceEmbeddings
 from utils.json_processor import load_all_json_files, find_data_by_keyword, find_cve_from_snyk
@@ -36,7 +131,7 @@ def suppress_stdout_stderr():
     """Context manager to suppress stdout and stderr."""
     stdout = sys.stdout
     stderr = sys.stderr
-    null_device = open(os.devnull, "w")
+    null_device = open(os.devnull, 'w')
     try:
         sys.stdout = null_device
         sys.stderr = null_device
@@ -84,11 +179,7 @@ def process_query(query, vectorstore, json_files, llm):
 def main():
     # Load JSON files
     print("Loading JSON files...")
-    json_files = [
-        os.path.join(config.JSON_FILES_DIR, f)
-        for f in os.listdir(config.JSON_FILES_DIR)
-        if f.endswith(".json")
-    ]
+    json_files = load_all_json_files(config.JSON_FILES_DIR)
 
     # Initialize the LLM
     print("Initializing the LLM...")
@@ -98,21 +189,20 @@ def main():
             temperature=0.7,
             max_tokens=2000,
             top_p=0.9,
-            verbose=True,
+            verbose=True
         )
 
     # Initialize the embedding model
     print("Initializing the embedding model...")
     embeddings = HuggingFaceEmbeddings(
-        model_name=config.EMBEDDING_MODEL_PATH, model_kwargs={"device": "cpu"}
+        model_name=config.EMBEDDING_MODEL_PATH,
+        model_kwargs={'device': 'cpu'}
     )
 
     # Embed and store data in ChromaDB
     print("Embedding and storing data in ChromaDB...")
     with suppress_stdout_stderr():
-        vectorstore = embed_and_store_data(
-            json_files, embeddings, config.CHROMA_DB_DIR, "hashes.json"
-        )
+        vectorstore = embed_and_store_data(json_files, embeddings, config.CHROMA_DB_DIR)
 
     print("Data embedding completed successfully!")
 
@@ -135,76 +225,30 @@ if __name__ == "__main__":
 
 ---
 
-### **Key Fixes**
+### Key Fixes
 
-1. **Handle JSON Structure**:
-   - The `embed_and_store_data` function in `vector_store.py` has been updated to handle both dictionary and list structures in JSON files.
+1. **`AttributeError` Fix**:
+   - The `embed_and_store_data` function now handles both dictionaries and lists in JSON files.
 
-2. **Avoid Re-Embedding Unchanged Data**:
-   - The `embed_and_store_data` function uses file hashes to check for changes and only embeds new or modified files.
+2. **Deprecation Warning**:
+   - The `Chroma` class is imported from `langchain_chroma`.
 
-3. **Truncate Input for LLM**:
-   - The `summarize_data` function truncates the input text to fit within the LLM's context window, avoiding the `ValueError`.
+3. **Query Processing**:
+   - The `process_query` function is implemented to handle SNYK IDs, CVE IDs, and keywords.
 
-4. **Deprecation Fix**:
-   - The `invoke` method is used instead of the deprecated `__call__`.
-
-5. **Query Processing**:
-   - The `process_query` function handles SNYK IDs, CVE IDs, and keywords, ensuring relevant data is retrieved and summarized.
+4. **Token Limit**:
+   - The `summarize_data` function truncates the input text to fit within the LLM's context window.
 
 ---
 
-### **Testing the Code**
+### Testing
 
-1. **Initial Run**:
-   - Place JSON files in the `data/` directory and run the program.
-   - All files will be embedded, and their hashes will be stored in `hashes.json`.
+1. **Test with JSON Files**:
+   - Place JSON files with and without `vulnerabilities` in the `data/` directory.
+   - Run the script and test queries for SNYK IDs, CVE IDs, and keywords.
 
-2. **Subsequent Runs**:
-   - Run the program again without modifying the files. The program should skip embedding for all files.
-
-3. **File Modification**:
-   - Modify one of the JSON files and run the program. Only the modified file should be re-embedded.
-
-4. **New Files**:
-   - Add a new JSON file and run the program. The new file should be embedded.
-
-5. **Query Testing**:
-   - Test queries for SNYK IDs, CVE IDs, and keywords. The program should return summarized results or indicate if no relevant data is found.
-
----
-
-### **Expected Output**
-
-- On the first run:
-  ```
-  Embedding data from sample1.json (new or changed)...
-  Embedding data from sample2.json (new or changed)...
-  Data embedding completed successfully!
-  ```
-
-- On subsequent runs (without changes):
-  ```
-  Skipping sample1.json (no changes detected).
-  Skipping sample2.json (no changes detected).
-  Data embedding completed successfully!
-  ```
-
-- After modifying a file:
-  ```
-  Skipping sample1.json (no changes detected).
-  Embedding data from sample2.json (new or changed)...
-  Data embedding completed successfully!
-  ```
-
-- For queries:
-  ```
-  Enter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: SNYK-JAVA-COMMONSIO-8161190
-
-  Processing your query...
-
-  === Summary ===
-  <Summarized response based on the data>
-  ```
+2. **Expected Output**:
+   - For valid queries, a summarized response is returned.
+   - For invalid queries, the system responds with: `"No relevant data found for your query."`
 
 Let me know if you encounter any further issues!
