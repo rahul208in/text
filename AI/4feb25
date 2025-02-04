@@ -1,11 +1,23 @@
 
-The issue of "no relevant data found for your query" and the errors in the logs indicate that the system is not correctly processing the JSON data or embedding it into ChromaDB. Additionally, the `AttributeError` and `ValueError` suggest that the JSON structure and token limits are not being handled properly.
+The errors and issues in your project are caused by the following:
 
-Here’s the **complete and corrected `main.py`** file to address these issues:
+1. **`AttributeError: 'list' object has no attribute 'get'`**:
+   - This happens because the JSON file structure is not being handled properly. Some files are lists, while others are dictionaries.
+
+2. **Deprecation Warning for `Chroma`**:
+   - The `Chroma` class is deprecated in `langchain`. You need to use the updated `langchain_chroma` package.
+
+3. **`ValueError: Requested tokens exceed context window`**:
+   - The input text to the LLM exceeds the maximum token limit. This needs to be truncated.
+
+4. **Query Results Not Found**:
+   - The query processing logic is not correctly retrieving data from the JSON files or ChromaDB.
 
 ---
 
-### **Corrected `main.py`**
+### **Updated and Complete Code**
+
+Below is the corrected `main.py` file that resolves all the issues.
 
 ```python
 import sys
@@ -187,4 +199,12 @@ if __name__ == "__main__":
 
 - For queries:
   ```
-  Enter your
+  Enter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: SNYK-JAVA-COMMONSIO-8161190
+
+  Processing your query...
+
+  === Summary ===
+  <Summarized response based on the data>
+  ```
+
+Let me know if you encounter any further issues!
