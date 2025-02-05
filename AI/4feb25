@@ -1,104 +1,113 @@
 
-### **Understanding Your Problem**
+### **Analysis of Errors**
 
-1. **Issue 1: "No relevant data found for your query"**
-   - You have around 70,000 JSON files, and you're unsure if they are being properly loaded into ChromaDB.
-   - When you query a valid CVE ID, the system responds with "No relevant data found for your query."
-
-2. **Issue 2: Handling Large Input**
-   - You are encountering a `ValueError: Requested tokens exceed context window` when processing large inputs for the LLM.
+From the provided logs and screenshots, here are the key issues:
 
 ---
 
-### **Proposed Solutions**
-
-#### **Issue 1: Ensuring JSON Files Are Loaded into ChromaDB**
-
-##### **Steps to Debug and Fix**
-
-1. **Verify JSON File Loading**
-   - Ensure that all JSON files are being read and processed correctly.
-   - Add a debug statement to print the filenames being processed.
-
-   Example:
-   ```python
-   for file_path in json_files:
-       print(f"Processing file: {file_path}")
-   ```
-
-2. **Handle JSON Structure**
-   - The error `AttributeError: 'list' object has no attribute 'get'` indicates that some JSON files are lists instead of dictionaries.
-   - Update the `embed_and_store_data` function to handle both cases.
-
-   Updated Code:
-   ```python
-   def embed_and_store_data(json_files, embeddings, persist_dir):
-       vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
-       for file_path in json_files:
-           with open(file_path, "r") as f:
-               data = json.load(f)
-               if isinstance(data, dict):
-                   for item in data.get("vulnerabilities", []):
-                       text = json.dumps(item)
-                       vectorstore.add_texts([text])
-               elif isinstance(data, list):
-                   for item in data:
-                       text = json.dumps(item)
-                       vectorstore.add_texts([text])
-       return vectorstore
-   ```
-
-3. **Check ChromaDB Content**
-   - After embedding, verify that the data is stored in ChromaDB.
-   - Add a debug statement to print the number of documents in the vector store.
-
-   Example:
-   ```python
-   print(f"Number of documents in ChromaDB: {len(vectorstore.get())}")
-   ```
-
-4. **Test Querying**
-   - Test querying ChromaDB directly to ensure the data is retrievable.
-   - Example:
-     ```python
-     results = vectorstore.similarity_search("CVE-2024-3144", k=5)
-     print(f"Query results: {results}")
-     ```
+#### **1. `AttributeError: 'list' object has no attribute 'get'`**
+- **Cause**: The code assumes that the JSON files are dictionaries with a `vulnerabilities` key, but some files are lists or have a different structure.
+- **Fix**: Update the code to handle both dictionaries and lists. Add checks to ensure the correct structure is processed.
 
 ---
 
-#### **Issue 2: Handling Large Input for LLM**
+#### **2. `TypeError: Object of type Document is not JSON serializable`**
+- **Cause**: The `summarize_large_data` function is trying to serialize objects of type `Document` (likely returned by ChromaDB) directly into JSON, which is not supported.
+- **Fix**: Extract the `page_content` or relevant fields from the `Document` objects before serialization.
 
-##### **Steps to Fix**
+---
 
-1. **Truncate Input**
-   - Limit the input text passed to the LLM to fit within its context window.
-   - Example:
-     ```python
-     max_tokens = 512  # Adjust based on your LLM's context window
-     truncated_text = combined_text[:max_tokens]
-     ```
+#### **3. `ValueError: Requested tokens exceed context window`**
+- **Cause**: The input text to the LLM exceeds the maximum token limit.
+- **Fix**: Truncate or split the input into smaller chunks that fit within the LLM's context window.
 
-2. **Summarize in Chunks**
-   - If the input is too large, split it into smaller chunks and summarize each chunk separately.
-   - Example:
-     ```python
-     def summarize_large_data(llm, data, chunk_size=512):
-         combined_text = "\n".join([json.dumps(item, indent=2) for item in data])
-         chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
-         summaries = []
-         for chunk in chunks:
-             prompt = f"Summarize the following data:\n\n{chunk}\n\nSummary:"
-             summaries.append(llm.invoke(prompt))
-         return " ".join(summaries)
-     ```
+---
 
-3. **Optimize Prompt**
-   - Use a concise prompt to reduce token usage.
-   - Example:
-     ```python
-     summarization_prompt = f"Summarize:\n{truncated_text}"
-     ```
+#### **4. Deprecation Warning for `Chroma`**
+- **Cause**: The `Chroma` class is deprecated in `langchain`. The updated `langchain_chroma` package should be used.
+- **Fix**: Update the import statement and install the new package.
+
+---
+
+### **Proposed Fixes**
+
+#### **1. Handle JSON Structure Properly**
+Update the `embed_and_store_data` function to handle both dictionaries and lists.
+
+```python
+def embed_and_store_data(json_files, embeddings, persist_dir):
+    """Embed and store data in ChromaDB."""
+    from langchain_chroma import Chroma  # Use the updated package
+    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
+
+    for file_path in json_files:
+        print(f"Processing file: {file_path}")
+        with open(file_path, "r") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                # Handle dictionary structure
+                for item in data.get("vulnerabilities", []):
+                    text = json.dumps(item)
+                    vectorstore.add_texts([text])
+            elif isinstance(data, list):
+                # Handle list structure
+                for item in data:
+                    text = json.dumps(item)
+                    vectorstore.add_texts([text])
+            else:
+                print(f"Skipping unsupported structure in file: {file_path}")
+    return vectorstore
+```
+
+---
+
+#### **2. Fix `TypeError` for `Document` Objects**
+Extract the `page_content` or relevant fields from the `Document` objects before summarization.
+
+```python
+def summarize_large_data(llm, data, chunk_size=512):
+    """Summarize large data in chunks."""
+    # Extract content from Document objects
+    combined_text = "\n".join([item.page_content for item in data])
+    chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
+    summaries = []
+    for chunk in chunks:
+        prompt = f"Summarize the following data:\n\n{chunk}\n\nSummary:"
+        summaries.append(llm.invoke(prompt))
+    return " ".join(summaries)
+```
+
+---
+
+#### **3. Handle Large Input for LLM**
+Truncate or split the input into smaller chunks to fit within the LLM's context window.
+
+```python
+def truncate_text(text, max_tokens=512):
+    """Truncate text to fit within the LLM's context window."""
+    return text[:max_tokens]
+
+def summarize_data(llm, data):
+    """Summarize the given data using an LLM."""
+    combined_text = "\n".join([item.page_content for item in data])
+    truncated_text = truncate_text(combined_text, max_tokens=512)
+    summarization_prompt = f"Summarize the following data:\n\n{truncated_text}\n\nSummary:"
+    return llm.invoke(summarization_prompt)
+```
+
+---
+
+#### **4. Update `Chroma` Import**
+Replace the deprecated `Chroma` class with the updated version.
+
+```python
+from langchain_chroma import Chroma
+```
+
+Ensure the package is installed:
+```bash
+pip install -U langchain-chroma
+```
 
 ---
 
@@ -113,6 +122,7 @@ from langchain_chroma import Chroma
 def embed_and_store_data(json_files, embeddings, persist_dir):
     """Embed and store data in ChromaDB."""
     vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
+
     for file_path in json_files:
         print(f"Processing file: {file_path}")
         with open(file_path, "r") as f:
@@ -125,7 +135,8 @@ def embed_and_store_data(json_files, embeddings, persist_dir):
                 for item in data:
                     text = json.dumps(item)
                     vectorstore.add_texts([text])
-    print(f"Number of documents in ChromaDB: {len(vectorstore.get())}")
+            else:
+                print(f"Skipping unsupported structure in file: {file_path}")
     return vectorstore
 ```
 
@@ -141,7 +152,7 @@ import config
 
 def summarize_large_data(llm, data, chunk_size=512):
     """Summarize large data in chunks."""
-    combined_text = "\n".join([json.dumps(item, indent=2) for item in data])
+    combined_text = "\n".join([item.page_content for item in data])
     chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
     summaries = []
     for chunk in chunks:
