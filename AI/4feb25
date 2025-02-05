@@ -1,44 +1,43 @@
 
 ### **Analysis of Issues**
 
-From the provided screenshots and error messages, the following issues are identified:
+From the screenshots and the description, the following issues are identified:
 
-1. **`AttributeError: 'list' object has no attribute 'get'`**
-   - This occurs because the `embed_and_store_data` function assumes that all JSON files have a `vulnerabilities` key. However, some JSON files are lists or have different structures.
+1. **Exact Match Issue**:
+   - The system is returning results that are not exact matches for the query (e.g., searching for `XYZ` also returns results for `XZ`, `Zimbabwe`, etc.).
+   - This happens because the similarity search in ChromaDB is based on embeddings, which prioritize semantic similarity rather than exact string matching.
 
-2. **`TypeError: Object of type Document is not JSON serializable`**
+2. **`AttributeError: 'list' object has no attribute 'get'`**:
+   - This occurs because the `embed_and_store_data` function assumes all JSON files have a dictionary structure with a `vulnerabilities` key. However, some JSON files are lists or have different structures.
+
+3. **`TypeError: Object of type Document is not JSON serializable`**:
    - This happens when trying to serialize `Document` objects directly. The `page_content` or relevant fields need to be extracted before serialization.
 
-3. **`ValueError: Requested tokens exceed context window`**
+4. **`ValueError: Requested tokens exceed context window`**:
    - The input text being passed to the LLM exceeds the context window size. This needs to be chunked into smaller parts.
 
-4. **`ValueError: Expected embeddings to be a list of floats`**
+5. **`ValueError: Expected embeddings to be a list of floats`**:
    - This error occurs because the embeddings being passed to ChromaDB are not in the expected format. The embeddings must be a list of floats.
-
-5. **Deprecation Warning for `Chroma`**
-   - The `Chroma` class is deprecated in `langchain`. The updated `langchain_chroma` package should be used instead.
 
 ---
 
 ### **Proposed Fixes**
 
-#### **1. Handle JSON Files with Different Structures**
-- Update the `embed_and_store_data` function to handle JSON files with varying structures. For example:
-  - If the file contains a `vulnerabilities` key, process it.
-  - If the file is a list, process each item in the list.
-  - Otherwise, process the entire file as a single document.
+#### **1. Implement Exact Match Search**
+- Modify the query processing logic to first check for exact matches in the stored data before performing a similarity search.
+- If an exact match is found, return it directly. Otherwise, fall back to the similarity search.
 
-#### **2. Extract `page_content` from `Document` Objects**
+#### **2. Handle JSON Files with Different Structures**
+- Update the `embed_and_store_data` function to handle JSON files with varying structures (e.g., lists, dictionaries, or other formats).
+
+#### **3. Extract `page_content` from `Document` Objects**
 - Update the `summarize_large_data` function to extract the `page_content` field from `Document` objects.
 
-#### **3. Chunk Large Inputs**
+#### **4. Chunk Large Inputs**
 - Implement a chunking mechanism to split large inputs into smaller parts that fit within the LLM's context window.
 
-#### **4. Ensure Embeddings are in the Correct Format**
+#### **5. Ensure Embeddings are in the Correct Format**
 - Ensure that the embeddings returned by the `CustomEmbeddings` class are converted to a list of floats before being passed to ChromaDB.
-
-#### **5. Use Updated `langchain_chroma` Package**
-- Replace the deprecated `Chroma` class with the updated version.
 
 ---
 
@@ -81,6 +80,19 @@ from database.vector_store import embed_and_store_data
 from utils.json_processor import load_all_json_files
 import config
 
+def exact_match_search(query, json_files):
+    """Perform an exact match search in the JSON files."""
+    for file in json_files:
+        if isinstance(file, dict) and "vulnerabilities" in file:
+            for item in file["vulnerabilities"]:
+                if query in item.values():
+                    return item
+        elif isinstance(file, list):
+            for item in file:
+                if query in item.values():
+                    return item
+    return None
+
 def summarize_large_data(llm, data, chunk_size=512):
     """Summarize large data in chunks."""
     combined_text = "\n".join([item.page_content for item in data])
@@ -115,7 +127,15 @@ def main():
         query = input("Enter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: ")
         if query.lower() == "quit":
             break
+
         print("\nProcessing your query...")
+        # Perform exact match search
+        exact_match = exact_match_search(query, json_files)
+        if exact_match:
+            print(f"\nExact Match Found:\n{json.dumps(exact_match, indent=2)}")
+            continue
+
+        # Perform similarity search
         results = vectorstore.similarity_search(query, k=5)
         if results:
             summary = summarize_large_data(llm, results)
@@ -180,35 +200,35 @@ EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Pa
 
 ### **Key Fixes**
 
-1. **Handle JSON Files with Different Structures**
-   - The `embed_and_store_data` function now processes files with or without the `vulnerabilities` key and handles lists.
+1. **Exact Match Search**:
+   - Added a function `exact_match_search` to check for exact matches in the JSON files before performing a similarity search.
 
-2. **Extract `page_content` from `Document` Objects**
-   - The `summarize_large_data` function extracts the `page_content` field from `Document` objects.
+2. **Handle JSON Files with Different Structures**:
+   - Updated `embed_and_store_data` to handle JSON files with varying structures.
 
-3. **Chunk Large Inputs**
-   - Large inputs are chunked to fit within the LLM's context window.
+3. **Extract `page_content` from `Document` Objects**:
+   - Updated `summarize_large_data` to extract the `page_content` field.
 
-4. **Ensure Embeddings are in the Correct Format**
-   - The `CustomEmbeddings` class ensures that embeddings are converted to a list of floats.
+4. **Chunk Large Inputs**:
+   - Implemented chunking in `summarize_large_data` to handle large inputs.
 
-5. **Deprecation Warning**
-   - The updated `langchain_chroma` package is used.
+5. **Ensure Embeddings are in the Correct Format**:
+   - The `CustomEmbeddings` class ensures embeddings are converted to a list of floats.
 
 ---
 
 ### **Testing Steps**
 
-1. **Verify Model Loading**
-   - Ensure the `gte-large` model is loaded successfully using the `CustomEmbeddings` class.
+1. **Verify Exact Match Search**:
+   - Test queries with exact matches (e.g., `SNYK ID` or `CVE ID`) and verify the results.
 
-2. **Test Data Embedding**
+2. **Test Data Embedding**:
    - Run the program and check that all JSON files are embedded into ChromaDB.
 
-3. **Test Querying**
+3. **Test Querying**:
    - Query valid SNYK IDs, CVE IDs, or keywords and verify the results.
 
-4. **Handle Large Inputs**
+4. **Handle Large Inputs**:
    - Test with large datasets to confirm that inputs are chunked properly.
 
 ---
