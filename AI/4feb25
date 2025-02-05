@@ -4,7 +4,7 @@
 From the provided screenshots and error messages, the following issues are identified:
 
 1. **`AttributeError: 'list' object has no attribute 'get'`**
-   - This occurs because the `embed_and_store_data` function assumes that all JSON files have a `vulnerabilities` key at the top level. However, not all JSON files follow this structure.
+   - This occurs because the `embed_and_store_data` function assumes that all JSON files have a `vulnerabilities` key. However, some JSON files are lists or have different structures.
 
 2. **`TypeError: Object of type Document is not JSON serializable`**
    - This happens when trying to serialize `Document` objects directly. The `page_content` or relevant fields need to be extracted before serialization.
@@ -12,7 +12,10 @@ From the provided screenshots and error messages, the following issues are ident
 3. **`ValueError: Requested tokens exceed context window`**
    - The input text being passed to the LLM exceeds the context window size. This needs to be chunked into smaller parts.
 
-4. **Deprecation Warning for `Chroma`**
+4. **`ValueError: Expected embeddings to be a list of floats`**
+   - This error occurs because the embeddings being passed to ChromaDB are not in the expected format. The embeddings must be a list of floats.
+
+5. **Deprecation Warning for `Chroma`**
    - The `Chroma` class is deprecated in `langchain`. The updated `langchain_chroma` package should be used instead.
 
 ---
@@ -22,6 +25,7 @@ From the provided screenshots and error messages, the following issues are ident
 #### **1. Handle JSON Files with Different Structures**
 - Update the `embed_and_store_data` function to handle JSON files with varying structures. For example:
   - If the file contains a `vulnerabilities` key, process it.
+  - If the file is a list, process each item in the list.
   - Otherwise, process the entire file as a single document.
 
 #### **2. Extract `page_content` from `Document` Objects**
@@ -30,7 +34,10 @@ From the provided screenshots and error messages, the following issues are ident
 #### **3. Chunk Large Inputs**
 - Implement a chunking mechanism to split large inputs into smaller parts that fit within the LLM's context window.
 
-#### **4. Use Updated `langchain_chroma` Package**
+#### **4. Ensure Embeddings are in the Correct Format**
+- Ensure that the embeddings returned by the `CustomEmbeddings` class are converted to a list of floats before being passed to ChromaDB.
+
+#### **5. Use Updated `langchain_chroma` Package**
 - Replace the deprecated `Chroma` class with the updated version.
 
 ---
@@ -49,6 +56,11 @@ def embed_and_store_data(json_files, embeddings, persist_dir):
         if isinstance(file, dict) and "vulnerabilities" in file:
             # Process vulnerabilities key
             for item in file["vulnerabilities"]:
+                text = json.dumps(item)  # Convert the JSON object to a string
+                vectorstore.add_texts([text])
+        elif isinstance(file, list):
+            # Process each item in the list
+            for item in file:
                 text = json.dumps(item)  # Convert the JSON object to a string
                 vectorstore.add_texts([text])
         else:
@@ -117,6 +129,24 @@ if __name__ == "__main__":
 
 ---
 
+#### **`models/model_loader.py`**
+```python
+from sentence_transformers import SentenceTransformer
+
+class CustomEmbeddings:
+    """Custom wrapper for SentenceTransformer to add embed_query and embed_documents methods."""
+    def __init__(self, model_path: str):
+        self.model = SentenceTransformer(model_path)
+
+    def embed_query(self, query: str):
+        return self.model.encode(query, convert_to_tensor=False).tolist()
+
+    def embed_documents(self, documents: list):
+        return [self.model.encode(doc, convert_to_tensor=False).tolist() for doc in documents]
+```
+
+---
+
 #### **`utils/json_processor.py`**
 ```python
 import json
@@ -134,9 +164,53 @@ def load_all_json_files(directory):
 
 ---
 
-#### **`models/model_loader.py`**
+#### **`config.py`**
 ```python
-from sentence_transformers import SentenceTransformer
+import os
 
-class CustomEmbeddings:
-    """Custom wrapper for SentenceTransformer to add embed_query
+# Paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+JSON_FILES_DIR = os.path.join(BASE_DIR, "data")
+CHROMA_DB_DIR = os.path.join(BASE_DIR, "cache", "chroma_db")
+LLM_MODEL_PATH = "/path/to/your/mistral-7b-model"  # Update with your Mistral model path
+EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Path to gte-large model
+```
+
+---
+
+### **Key Fixes**
+
+1. **Handle JSON Files with Different Structures**
+   - The `embed_and_store_data` function now processes files with or without the `vulnerabilities` key and handles lists.
+
+2. **Extract `page_content` from `Document` Objects**
+   - The `summarize_large_data` function extracts the `page_content` field from `Document` objects.
+
+3. **Chunk Large Inputs**
+   - Large inputs are chunked to fit within the LLM's context window.
+
+4. **Ensure Embeddings are in the Correct Format**
+   - The `CustomEmbeddings` class ensures that embeddings are converted to a list of floats.
+
+5. **Deprecation Warning**
+   - The updated `langchain_chroma` package is used.
+
+---
+
+### **Testing Steps**
+
+1. **Verify Model Loading**
+   - Ensure the `gte-large` model is loaded successfully using the `CustomEmbeddings` class.
+
+2. **Test Data Embedding**
+   - Run the program and check that all JSON files are embedded into ChromaDB.
+
+3. **Test Querying**
+   - Query valid SNYK IDs, CVE IDs, or keywords and verify the results.
+
+4. **Handle Large Inputs**
+   - Test with large datasets to confirm that inputs are chunked properly.
+
+---
+
+Let me know if you encounter further issues!
