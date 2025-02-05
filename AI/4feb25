@@ -1,76 +1,62 @@
+### **Analysis of Issues**
 
-Thank you for clarifying and sharing the details. Based on the provided information and screenshots, I will address the following issues and provide an updated script:
+From the provided details and screenshots, the following two issues are identified:
 
 ---
 
-### **Key Issues Identified**
+#### **1. Missing Sentence-Transformers Model**
+- **Error**: `No sentence-transformers model found with name /Users/rj22898/Documents/model/Embedded/gte-large`.
+- **Cause**: The embedding model path is incorrect, or the model is not available at the specified location.
+- **Fix**: Ensure the correct path to the embedding model and verify that the model exists at the specified location.
 
-1. **`AttributeError: 'list' object has no attribute 'get'`**
-   - This error occurs because the code assumes that the JSON files are dictionaries with a `vulnerabilities` key, but some files are lists or have a different structure.
+---
 
-2. **`TypeError: Object of type Document is not JSON serializable`**
-   - This happens when the `Document` objects returned by ChromaDB are directly passed to `json.dumps()` without extracting their content.
-
-3. **`ValueError: Requested tokens exceed context window`**
-   - The input text to the LLM exceeds the maximum token limit, causing this error.
-
-4. **Deprecation Warning for `Chroma`**
-   - The `Chroma` class is deprecated in `langchain`. The updated `langchain_chroma` package should be used.
+#### **2. `TypeError: Object of type Document is not JSON serializable`**
+- **Cause**: The `Document` objects returned by ChromaDB are being passed directly to `json.dumps()`, which cannot serialize them.
+- **Fix**: Extract the `page_content` or relevant fields from the `Document` objects before processing.
 
 ---
 
 ### **Proposed Fixes**
 
-#### **1. Handle JSON Structure Properly**
-- Update the `embed_and_store_data` function to handle both dictionaries and lists.
-- Skip unsupported structures with a warning.
+#### **1. Fix Missing Sentence-Transformers Model**
+- Verify that the `gte-large` model exists at the specified path (`/Users/rj22898/Documents/model/Embedded/gte-large`).
+- If the model is missing, download it using the `sentence-transformers` library:
+  ```bash
+  pip install -U sentence-transformers
+  ```
+  Then, download the `gte-large` model:
+  ```python
+  from sentence_transformers import SentenceTransformer
+  model = SentenceTransformer('sentence-transformers/gte-large')
+  model.save('/Users/rj22898/Documents/model/Embedded/gte-large')
+  ```
+- Update the `config.py` file to ensure the correct path:
+  ```python
+  EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"
+  ```
+
+---
 
 #### **2. Fix `TypeError` for `Document` Objects**
 - Extract the `page_content` or relevant fields from the `Document` objects before processing.
-
-#### **3. Handle Large Input for LLM**
-- Truncate or split the input into smaller chunks to fit within the LLM's context window.
-
-#### **4. Update `Chroma` Import**
-- Replace the deprecated `Chroma` class with the updated version from `langchain_chroma`.
+- Update the `summarize_large_data` function to handle this:
+  ```python
+  def summarize_large_data(llm, data, chunk_size=512):
+      """Summarize large data in chunks."""
+      # Extract content from Document objects
+      combined_text = "\n".join([item.page_content for item in data])
+      chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
+      summaries = []
+      for chunk in chunks:
+          prompt = f"Summarize the following data:\n\n{chunk}\n\nSummary:"
+          summaries.append(llm.invoke(prompt))
+      return " ".join(summaries)
+  ```
 
 ---
 
 ### **Updated Code**
-
-#### **`vector_store.py`**
-```python
-import os
-import json
-from langchain_chroma import Chroma
-
-def embed_and_store_data(json_files, embeddings, persist_dir):
-    """Embed and store data in ChromaDB."""
-    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
-
-    for file_path in json_files:
-        print(f"Processing file: {file_path}")
-        with open(file_path, "r") as f:
-            try:
-                data = json.load(f)
-                if isinstance(data, dict):
-                    # Handle dictionary structure
-                    for item in data.get("vulnerabilities", []):
-                        text = json.dumps(item)
-                        vectorstore.add_texts([text])
-                elif isinstance(data, list):
-                    # Handle list structure
-                    for item in data:
-                        text = json.dumps(item)
-                        vectorstore.add_texts([text])
-                else:
-                    print(f"Skipping unsupported structure in file: {file_path}")
-            except json.JSONDecodeError as e:
-                print(f"Error decoding JSON in file {file_path}: {e}")
-    return vectorstore
-```
-
----
 
 #### **`main.py`**
 ```python
@@ -82,6 +68,7 @@ import config
 
 def summarize_large_data(llm, data, chunk_size=512):
     """Summarize large data in chunks."""
+    # Extract content from Document objects
     combined_text = "\n".join([item.page_content for item in data])
     chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
     summaries = []
@@ -92,26 +79,33 @@ def summarize_large_data(llm, data, chunk_size=512):
 
 def main():
     # Load JSON files
+    print("Loading JSON files...")
     json_files = [os.path.join(config.JSON_FILES_DIR, f) for f in os.listdir(config.JSON_FILES_DIR) if f.endswith(".json")]
 
     # Initialize the LLM
+    print("Initializing the LLM...")
     llm = LlamaCpp(model_path=config.LLM_MODEL_PATH, temperature=0.7, max_tokens=2000, top_p=0.9, verbose=True)
 
     # Initialize the embedding model
+    print("Initializing the embedding model...")
     embeddings = HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL_PATH, model_kwargs={"device": "cpu"})
 
     # Embed and store data in ChromaDB
+    print("Embedding and storing data in ChromaDB...")
     vectorstore = embed_and_store_data(json_files, embeddings, config.CHROMA_DB_DIR)
+    print("Data embedding completed successfully!")
 
     # Interactive query loop
+    print("\nReady for queries!")
     while True:
-        query = input("Enter your query (CVE ID or keyword) or 'quit' to exit: ")
+        query = input("Enter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: ")
         if query.lower() == "quit":
             break
+        print("\nProcessing your query...")
         results = vectorstore.similarity_search(query, k=5)
         if results:
             summary = summarize_large_data(llm, results)
-            print(f"Summary: {summary}")
+            print(f"\nSummary:\n{summary}")
         else:
             print("No relevant data found for your query.")
 
@@ -121,32 +115,20 @@ if __name__ == "__main__":
 
 ---
 
-### **Key Changes**
-
-1. **`vector_store.py`**
-   - Handles both dictionary and list structures in JSON files.
-   - Skips unsupported structures with a warning.
-   - Catches and logs JSON decoding errors.
-
-2. **`main.py`**
-   - Extracts `page_content` from `Document` objects before summarization.
-   - Splits large input into smaller chunks for summarization.
-
-3. **Deprecation Fix**
-   - Updated `Chroma` import to use `langchain_chroma`.
-
----
-
 ### **Testing Steps**
 
-1. **Verify Data Loading**
+1. **Verify the Embedding Model**
+   - Ensure the `gte-large` model exists at `/Users/rj22898/Documents/model/Embedded/gte-large`.
+   - If missing, download and save the model as described above.
+
+2. **Test Data Embedding**
    - Run the program and ensure all JSON files are processed without errors.
    - Check the debug output for the number of documents in ChromaDB.
 
-2. **Test Querying**
+3. **Test Querying**
    - Query valid CVE IDs and keywords to ensure relevant data is retrieved.
 
-3. **Handle Large Input**
+4. **Handle Large Input**
    - Test with large datasets to confirm that the input is truncated or chunked properly.
 
 ---
