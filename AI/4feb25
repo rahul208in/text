@@ -1,115 +1,61 @@
 
-Based on the provided screenshots and issues, I will provide a **complete code implementation** to address the following problems:
+### **Analysis of Issues**
 
-1. **"No sentence-transformers model found with name..."**  
-   - The `gte-large` model is present, but the `SentenceTransformer` library cannot recognize it. We'll ensure proper loading and fallback mechanisms.
+From the provided screenshots and error messages, the following issues are identified:
 
-2. **`bertModel object has no attribute embed_query`**  
-   - The `HuggingFaceEmbeddings` class expects an `embed_query` method, which is not available in the `gte-large` model. We'll create a custom wrapper.
+1. **`AttributeError: 'list' object has no attribute 'get'`**
+   - This occurs because the `embed_and_store_data` function assumes that all JSON files have a `vulnerabilities` key at the top level. However, not all JSON files follow this structure.
 
-3. **`AttributeError: 'list' object has no attribute 'get'`**  
-   - This occurs because the JSON structure is not being handled correctly. We'll fix the `embed_and_store_data` function.
+2. **`TypeError: Object of type Document is not JSON serializable`**
+   - This happens when trying to serialize `Document` objects directly. The `page_content` or relevant fields need to be extracted before serialization.
 
-4. **`TypeError: Object of type Document is not JSON serializable`**  
-   - This happens when trying to serialize `Document` objects. We'll extract the `page_content` field.
+3. **`ValueError: Requested tokens exceed context window`**
+   - The input text being passed to the LLM exceeds the context window size. This needs to be chunked into smaller parts.
 
-5. **Performance Issues with ChromaDB**  
-   - We'll optimize the embedding and querying process.
+4. **Deprecation Warning for `Chroma`**
+   - The `Chroma` class is deprecated in `langchain`. The updated `langchain_chroma` package should be used instead.
 
-6. **`ValueError: Requested tokens exceed context window`**  
-   - We'll chunk large inputs to fit within the LLM's context window.
+---
+
+### **Proposed Fixes**
+
+#### **1. Handle JSON Files with Different Structures**
+- Update the `embed_and_store_data` function to handle JSON files with varying structures. For example:
+  - If the file contains a `vulnerabilities` key, process it.
+  - Otherwise, process the entire file as a single document.
+
+#### **2. Extract `page_content` from `Document` Objects**
+- Update the `summarize_large_data` function to extract the `page_content` field from `Document` objects.
+
+#### **3. Chunk Large Inputs**
+- Implement a chunking mechanism to split large inputs into smaller parts that fit within the LLM's context window.
+
+#### **4. Use Updated `langchain_chroma` Package**
+- Replace the deprecated `Chroma` class with the updated version.
 
 ---
 
 ### **Complete Code Implementation**
 
-#### **Project Structure**
-```plaintext
-your_project/
-├── data/                     # Place all JSON files here
-│   ├── sample1.json
-│   ├── sample2.json
-│   └── ...
-├── cache/
-│   └── chroma_db/            # ChromaDB persistence directory
-├── models/
-│   └── model_loader.py       # Model loading logic
-├── database/
-│   └── vector_store.py       # ChromaDB operations
-├── agents/
-│   └── qa_agent.py           # Query processing logic
-├── utils/
-│   └── json_processor.py     # JSON processing utilities
-├── config.py                 # Configuration file
-└── main.py                   # Main entry point
-```
-
----
-
-#### **`config.py`**
-```python
-import os
-
-# Paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-JSON_FILES_DIR = os.path.join(BASE_DIR, "data")
-CHROMA_DB_DIR = os.path.join(BASE_DIR, "cache", "chroma_db")
-LLM_MODEL_PATH = "/path/to/your/mistral-7b-model"  # Update with your Mistral model path
-EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Path to gte-large model
-```
-
----
-
-#### **`utils/json_processor.py`**
-```python
-import json
-import os
-from typing import List, Dict, Any
-
-def load_all_json_files(directory: str) -> List[Dict[str, Any]]:
-    """Load all JSON files from a directory."""
-    json_files = []
-    for filename in os.listdir(directory):
-        if filename.endswith(".json"):
-            with open(os.path.join(directory, filename), "r") as file:
-                json_files.append(json.load(file))
-    return json_files
-```
-
----
-
 #### **`database/vector_store.py`**
 ```python
 from langchain_chroma import Chroma
-from typing import List, Dict, Any
 import json
 
-def embed_and_store_data(json_files: List[Dict[str, Any]], embeddings, persist_dir: str) -> Chroma:
+def embed_and_store_data(json_files, embeddings, persist_dir):
     """Embed and store data in ChromaDB."""
     vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
     for file in json_files:
-        for item in file.get("vulnerabilities", []):  # Handle JSON structure
-            text = json.dumps(item)  # Convert the JSON object to a string
+        if isinstance(file, dict) and "vulnerabilities" in file:
+            # Process vulnerabilities key
+            for item in file["vulnerabilities"]:
+                text = json.dumps(item)  # Convert the JSON object to a string
+                vectorstore.add_texts([text])
+        else:
+            # Process the entire file as a single document
+            text = json.dumps(file)  # Convert the JSON object to a string
             vectorstore.add_texts([text])
     return vectorstore
-```
-
----
-
-#### **`models/model_loader.py`**
-```python
-from sentence_transformers import SentenceTransformer
-
-class CustomEmbeddings:
-    """Custom wrapper for SentenceTransformer to add embed_query and embed_documents methods."""
-    def __init__(self, model_path: str):
-        self.model = SentenceTransformer(model_path)
-
-    def embed_query(self, query: str):
-        return self.model.encode(query, convert_to_tensor=True)
-
-    def embed_documents(self, documents: List[str]):
-        return [self.model.encode(doc, convert_to_tensor=True) for doc in documents]
 ```
 
 ---
@@ -171,39 +117,26 @@ if __name__ == "__main__":
 
 ---
 
-### **Key Fixes**
+#### **`utils/json_processor.py`**
+```python
+import json
+import os
 
-1. **Model Loading**
-   - The `CustomEmbeddings` class wraps the `SentenceTransformer` model and provides `embed_query` and `embed_documents` methods.
-
-2. **JSON Structure**
-   - The `embed_and_store_data` function correctly handles the `vulnerabilities` field in the JSON files.
-
-3. **Serialization**
-   - The `summarize_large_data` function extracts the `page_content` field from `Document` objects.
-
-4. **Performance**
-   - ChromaDB persistence is enabled to avoid re-embedding data on every run.
-
-5. **LLM Context Window**
-   - Large inputs are chunked to fit within the LLM's context window.
+def load_all_json_files(directory):
+    """Load all JSON files from a directory."""
+    json_files = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".json"):
+            with open(os.path.join(directory, filename), "r") as file:
+                json_files.append(json.load(file))
+    return json_files
+```
 
 ---
 
-### **Testing Steps**
+#### **`models/model_loader.py`**
+```python
+from sentence_transformers import SentenceTransformer
 
-1. **Verify Model Loading**
-   - Ensure the `gte-large` model is loaded successfully using the `CustomEmbeddings` class.
-
-2. **Test Data Embedding**
-   - Run the program and check that all JSON files are embedded into ChromaDB.
-
-3. **Test Querying**
-   - Query valid SNYK IDs, CVE IDs, or keywords and verify the results.
-
-4. **Handle Large Inputs**
-   - Test with large datasets to confirm that inputs are chunked properly.
-
----
-
-Let me know if you encounter further issues!
+class CustomEmbeddings:
+    """Custom wrapper for SentenceTransformer to add embed_query
