@@ -1,136 +1,134 @@
-### **Analysis of Issues**
 
-From the provided details and screenshots, the following two issues are identified:
+Thank you for sharing the details and screenshots. Based on the information provided, I can see that:
 
----
+1. Your JSON files are located in the `data` folder.
+2. The `vector_store.py` script is responsible for embedding and storing the data.
+3. The `config.py` file contains paths and settings for the project, including the `JSON_FILES_DIR` and `EMBEDDING_MODEL_PATH`.
 
-#### **1. Missing Sentence-Transformers Model**
-- **Error**: `No sentence-transformers model found with name /Users/rj22898/Documents/model/Embedded/gte-large`.
-- **Cause**: The embedding model path is incorrect, or the model is not available at the specified location.
-- **Fix**: Ensure the correct path to the embedding model and verify that the model exists at the specified location.
-
----
-
-#### **2. `TypeError: Object of type Document is not JSON serializable`**
-- **Cause**: The `Document` objects returned by ChromaDB are being passed directly to `json.dumps()`, which cannot serialize them.
-- **Fix**: Extract the `page_content` or relevant fields from the `Document` objects before processing.
+I'll now provide an updated version of your `vector_store.py` script to:
+- Automatically read all JSON files from the `data` folder.
+- Use the Hugging Face model for embedding.
+- Store the embeddings in the Chroma vector store.
 
 ---
 
-### **Proposed Fixes**
-
-#### **1. Fix Missing Sentence-Transformers Model**
-- Verify that the `gte-large` model exists at the specified path (`/Users/rj22898/Documents/model/Embedded/gte-large`).
-- If the model is missing, download it using the `sentence-transformers` library:
-  ```bash
-  pip install -U sentence-transformers
-  ```
-  Then, download the `gte-large` model:
-  ```python
-  from sentence_transformers import SentenceTransformer
-  model = SentenceTransformer('sentence-transformers/gte-large')
-  model.save('/Users/rj22898/Documents/model/Embedded/gte-large')
-  ```
-- Update the `config.py` file to ensure the correct path:
-  ```python
-  EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"
-  ```
-
----
-
-#### **2. Fix `TypeError` for `Document` Objects**
-- Extract the `page_content` or relevant fields from the `Document` objects before processing.
-- Update the `summarize_large_data` function to handle this:
-  ```python
-  def summarize_large_data(llm, data, chunk_size=512):
-      """Summarize large data in chunks."""
-      # Extract content from Document objects
-      combined_text = "\n".join([item.page_content for item in data])
-      chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
-      summaries = []
-      for chunk in chunks:
-          prompt = f"Summarize the following data:\n\n{chunk}\n\nSummary:"
-          summaries.append(llm.invoke(prompt))
-      return " ".join(summaries)
-  ```
-
----
-
-### **Updated Code**
-
-#### **`main.py`**
+### **Updated `vector_store.py`**
 ```python
 import os
-from langchain.llms import LlamaCpp
-from langchain.embeddings import HuggingFaceEmbeddings
-from database.vector_store import embed_and_store_data
-import config
+import json
+from typing import List, Any
+import torch
+from langchain.vectorstores import Chroma
+from transformers import AutoModel, AutoTokenizer
+from config import JSON_FILES_DIR, CHROMA_DB_DIR, EMBEDDING_MODEL_PATH
 
-def summarize_large_data(llm, data, chunk_size=512):
-    """Summarize large data in chunks."""
-    # Extract content from Document objects
-    combined_text = "\n".join([item.page_content for item in data])
-    chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
-    summaries = []
-    for chunk in chunks:
-        prompt = f"Summarize the following data:\n\n{chunk}\n\nSummary:"
-        summaries.append(llm.invoke(prompt))
-    return " ".join(summaries)
 
-def main():
-    # Load JSON files
-    print("Loading JSON files...")
-    json_files = [os.path.join(config.JSON_FILES_DIR, f) for f in os.listdir(config.JSON_FILES_DIR) if f.endswith(".json")]
+def embed_and_store_data(data_folder: str, persist_dir: str, model_path: str):
+    """
+    Reads all JSON files from the specified folder, embeds their content using the Hugging Face model,
+    and stores the embeddings in a Chroma vector store.
 
-    # Initialize the LLM
-    print("Initializing the LLM...")
-    llm = LlamaCpp(model_path=config.LLM_MODEL_PATH, temperature=0.7, max_tokens=2000, top_p=0.9, verbose=True)
+    Args:
+        data_folder (str): Path to the folder containing JSON files.
+        persist_dir (str): Path to the directory where the vector store will be persisted.
+        model_path (str): Path to the Hugging Face model.
 
-    # Initialize the embedding model
-    print("Initializing the embedding model...")
-    embeddings = HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL_PATH, model_kwargs={"device": "cpu"})
+    Returns:
+        Chroma: The vector store containing the embedded data.
+    """
+    # Load the Hugging Face model and tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModel.from_pretrained(model_path)
 
-    # Embed and store data in ChromaDB
-    print("Embedding and storing data in ChromaDB...")
-    vectorstore = embed_and_store_data(json_files, embeddings, config.CHROMA_DB_DIR)
-    print("Data embedding completed successfully!")
+    # Initialize the Chroma vector store
+    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=None)
 
-    # Interactive query loop
-    print("\nReady for queries!")
-    while True:
-        query = input("Enter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: ")
-        if query.lower() == "quit":
-            break
-        print("\nProcessing your query...")
-        results = vectorstore.similarity_search(query, k=5)
-        if results:
-            summary = summarize_large_data(llm, results)
-            print(f"\nSummary:\n{summary}")
-        else:
-            print("No relevant data found for your query.")
+    # Get all JSON files from the data folder
+    json_files = [os.path.join(data_folder, f) for f in os.listdir(data_folder) if f.endswith(".json")]
+
+    for file_path in json_files:
+        print(f"Processing file: {file_path}")
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+
+            # Extract text data from the JSON file
+            text_corpus = []
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict):
+                        text_corpus.append(json.dumps(item))
+                    elif isinstance(item, str):
+                        text_corpus.append(item)
+            elif isinstance(data, dict):
+                for key, value in data.items():
+                    if isinstance(value, str):
+                        text_corpus.append(value)
+                    elif isinstance(value, list):
+                        for sub_item in value:
+                            if isinstance(sub_item, str):
+                                text_corpus.append(sub_item)
+                            elif isinstance(sub_item, dict):
+                                text_corpus.append(json.dumps(sub_item))
+            else:
+                print(f"Skipping unsupported structure in file: {file_path}")
+                continue
+
+            # Embed the text data
+            embeddings = []
+            for text in text_corpus:
+                inputs = tokenizer(text, padding=True, truncation=True, return_tensors="pt")
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                # Use mean pooling for embeddings
+                attention_mask = inputs['attention_mask']
+                mean_embedding = (outputs.last_hidden_state * attention_mask.unsqueeze(-1)).sum(1) / attention_mask.sum(1).unsqueeze(-1)
+                embeddings.append(mean_embedding.squeeze().numpy())
+
+            # Store the embeddings in the vector store
+            for text, embedding in zip(text_corpus, embeddings):
+                vectorstore.add_texts([text], [embedding])
+
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON in file {file_path}: {e}")
+
+    # Persist the vector store
+    vectorstore.persist()
+    print(f"Vector store persisted in: {persist_dir}")
+
+    return vectorstore
+
 
 if __name__ == "__main__":
-    main()
+    # Use paths from the config file
+    embed_and_store_data(JSON_FILES_DIR, CHROMA_DB_DIR, EMBEDDING_MODEL_PATH)
 ```
 
 ---
 
-### **Testing Steps**
+### **Key Updates**
+1. **Dynamic File Loading**:
+   - The script automatically reads all `.json` files from the `data` folder (`JSON_FILES_DIR` from `config.py`).
 
-1. **Verify the Embedding Model**
-   - Ensure the `gte-large` model exists at `/Users/rj22898/Documents/model/Embedded/gte-large`.
-   - If missing, download and save the model as described above.
+2. **Embedding Logic**:
+   - The Hugging Face model is used to tokenize and embed the text.
+   - Mean pooling is applied to generate embeddings.
 
-2. **Test Data Embedding**
-   - Run the program and ensure all JSON files are processed without errors.
-   - Check the debug output for the number of documents in ChromaDB.
+3. **Chroma Vector Store**:
+   - The embeddings are stored in the Chroma vector store, and the store is persisted in the directory specified by `CHROMA_DB_DIR`.
 
-3. **Test Querying**
-   - Query valid CVE IDs and keywords to ensure relevant data is retrieved.
-
-4. **Handle Large Input**
-   - Test with large datasets to confirm that the input is truncated or chunked properly.
+4. **Integration with `config.py`**:
+   - The script uses paths and settings from the `config.py` file for better modularity.
 
 ---
 
-Let me know if you encounter further issues!
+### **Usage**
+1. **Run the Script**:
+   - Ensure the `config.py` file is correctly configured with the paths to your `data` folder, Chroma DB directory, and model path.
+   - Run the script:
+     ```bash
+     python vector_store.py
+     ```
+
+2. **Expected Output**:
+   -
