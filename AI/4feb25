@@ -1,113 +1,38 @@
 
-### **Analysis of Errors**
-
-From the provided logs and screenshots, here are the key issues:
+Thank you for clarifying and sharing the details. Based on the provided information and screenshots, I will address the following issues and provide an updated script:
 
 ---
 
-#### **1. `AttributeError: 'list' object has no attribute 'get'`**
-- **Cause**: The code assumes that the JSON files are dictionaries with a `vulnerabilities` key, but some files are lists or have a different structure.
-- **Fix**: Update the code to handle both dictionaries and lists. Add checks to ensure the correct structure is processed.
+### **Key Issues Identified**
 
----
+1. **`AttributeError: 'list' object has no attribute 'get'`**
+   - This error occurs because the code assumes that the JSON files are dictionaries with a `vulnerabilities` key, but some files are lists or have a different structure.
 
-#### **2. `TypeError: Object of type Document is not JSON serializable`**
-- **Cause**: The `summarize_large_data` function is trying to serialize objects of type `Document` (likely returned by ChromaDB) directly into JSON, which is not supported.
-- **Fix**: Extract the `page_content` or relevant fields from the `Document` objects before serialization.
+2. **`TypeError: Object of type Document is not JSON serializable`**
+   - This happens when the `Document` objects returned by ChromaDB are directly passed to `json.dumps()` without extracting their content.
 
----
+3. **`ValueError: Requested tokens exceed context window`**
+   - The input text to the LLM exceeds the maximum token limit, causing this error.
 
-#### **3. `ValueError: Requested tokens exceed context window`**
-- **Cause**: The input text to the LLM exceeds the maximum token limit.
-- **Fix**: Truncate or split the input into smaller chunks that fit within the LLM's context window.
-
----
-
-#### **4. Deprecation Warning for `Chroma`**
-- **Cause**: The `Chroma` class is deprecated in `langchain`. The updated `langchain_chroma` package should be used.
-- **Fix**: Update the import statement and install the new package.
+4. **Deprecation Warning for `Chroma`**
+   - The `Chroma` class is deprecated in `langchain`. The updated `langchain_chroma` package should be used.
 
 ---
 
 ### **Proposed Fixes**
 
 #### **1. Handle JSON Structure Properly**
-Update the `embed_and_store_data` function to handle both dictionaries and lists.
-
-```python
-def embed_and_store_data(json_files, embeddings, persist_dir):
-    """Embed and store data in ChromaDB."""
-    from langchain_chroma import Chroma  # Use the updated package
-    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
-
-    for file_path in json_files:
-        print(f"Processing file: {file_path}")
-        with open(file_path, "r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                # Handle dictionary structure
-                for item in data.get("vulnerabilities", []):
-                    text = json.dumps(item)
-                    vectorstore.add_texts([text])
-            elif isinstance(data, list):
-                # Handle list structure
-                for item in data:
-                    text = json.dumps(item)
-                    vectorstore.add_texts([text])
-            else:
-                print(f"Skipping unsupported structure in file: {file_path}")
-    return vectorstore
-```
-
----
+- Update the `embed_and_store_data` function to handle both dictionaries and lists.
+- Skip unsupported structures with a warning.
 
 #### **2. Fix `TypeError` for `Document` Objects**
-Extract the `page_content` or relevant fields from the `Document` objects before summarization.
-
-```python
-def summarize_large_data(llm, data, chunk_size=512):
-    """Summarize large data in chunks."""
-    # Extract content from Document objects
-    combined_text = "\n".join([item.page_content for item in data])
-    chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
-    summaries = []
-    for chunk in chunks:
-        prompt = f"Summarize the following data:\n\n{chunk}\n\nSummary:"
-        summaries.append(llm.invoke(prompt))
-    return " ".join(summaries)
-```
-
----
+- Extract the `page_content` or relevant fields from the `Document` objects before processing.
 
 #### **3. Handle Large Input for LLM**
-Truncate or split the input into smaller chunks to fit within the LLM's context window.
-
-```python
-def truncate_text(text, max_tokens=512):
-    """Truncate text to fit within the LLM's context window."""
-    return text[:max_tokens]
-
-def summarize_data(llm, data):
-    """Summarize the given data using an LLM."""
-    combined_text = "\n".join([item.page_content for item in data])
-    truncated_text = truncate_text(combined_text, max_tokens=512)
-    summarization_prompt = f"Summarize the following data:\n\n{truncated_text}\n\nSummary:"
-    return llm.invoke(summarization_prompt)
-```
-
----
+- Truncate or split the input into smaller chunks to fit within the LLM's context window.
 
 #### **4. Update `Chroma` Import**
-Replace the deprecated `Chroma` class with the updated version.
-
-```python
-from langchain_chroma import Chroma
-```
-
-Ensure the package is installed:
-```bash
-pip install -U langchain-chroma
-```
+- Replace the deprecated `Chroma` class with the updated version from `langchain_chroma`.
 
 ---
 
@@ -126,17 +51,22 @@ def embed_and_store_data(json_files, embeddings, persist_dir):
     for file_path in json_files:
         print(f"Processing file: {file_path}")
         with open(file_path, "r") as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                for item in data.get("vulnerabilities", []):
-                    text = json.dumps(item)
-                    vectorstore.add_texts([text])
-            elif isinstance(data, list):
-                for item in data:
-                    text = json.dumps(item)
-                    vectorstore.add_texts([text])
-            else:
-                print(f"Skipping unsupported structure in file: {file_path}")
+            try:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    # Handle dictionary structure
+                    for item in data.get("vulnerabilities", []):
+                        text = json.dumps(item)
+                        vectorstore.add_texts([text])
+                elif isinstance(data, list):
+                    # Handle list structure
+                    for item in data:
+                        text = json.dumps(item)
+                        vectorstore.add_texts([text])
+                else:
+                    print(f"Skipping unsupported structure in file: {file_path}")
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON in file {file_path}: {e}")
     return vectorstore
 ```
 
@@ -188,6 +118,22 @@ def main():
 if __name__ == "__main__":
     main()
 ```
+
+---
+
+### **Key Changes**
+
+1. **`vector_store.py`**
+   - Handles both dictionary and list structures in JSON files.
+   - Skips unsupported structures with a warning.
+   - Catches and logs JSON decoding errors.
+
+2. **`main.py`**
+   - Extracts `page_content` from `Document` objects before summarization.
+   - Splits large input into smaller chunks for summarization.
+
+3. **Deprecation Fix**
+   - Updated `Chroma` import to use `langchain_chroma`.
 
 ---
 
