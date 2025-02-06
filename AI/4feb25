@@ -1,36 +1,51 @@
 
 ### **Understanding Your Requirements**
 
-Based on your input, here is a clear understanding of your requirements:
+From your detailed explanation and the provided screenshots, here is a clear understanding of your requirements:
 
 1. **Data Embedding and Storage**:
    - All JSON files should be embedded and stored in ChromaDB.
-   - The query should be embedded and searched in ChromaDB, not directly in the JSON files.
+   - Each document should include metadata such as `CVE ID`, `SNYK ID`, `description`, and `affected versions`.
 
 2. **Query Handling**:
-   - If the query is a `SNYK ID`, find the associated `CVE ID` and retrieve relevant data for both.
-   - If the query is a `CVE ID`, find the associated `SNYK ID` and retrieve relevant data for both.
-   - If the query is a keyword or sentence, search for relevant `CVE IDs` and `SNYK IDs` and provide a summary.
+   - Queries should be embedded and searched in ChromaDB.
+   - If matches are found, all matching results should be passed to the LLM for summarization.
 
 3. **Summary Generation**:
-   - All matching responses should be passed to the LLM for summarization.
-   - The summary must **include the `CVE ID`, `SNYK ID`, and a concise description**.
-   - The summary should be long enough to understand the issue but not too verbose.
+   - The summary must include:
+     - `CVE ID`
+     - `SNYK ID`
+     - `Description` (if available)
+     - `Affected Versions` (if available)
+   - The summary should be concise but detailed enough to understand the issue.
 
 4. **Error Handling**:
+   - Handle cases where some fields (e.g., `description`, `affected versions`) are missing.
    - Fix issues like `AttributeError: 'list' object has no attribute 'get'` and `TypeError: Object of type Document is not JSON serializable`.
-   - Ensure embeddings are correctly formatted as a list of floats for ChromaDB.
 
-5. **Preserve Original Functionality**:
-   - The updated code should not break any existing functionality.
+5. **Preserve Functionality**:
+   - Ensure the system works for all query types (`SNYK ID`, `CVE ID`, or keywords).
+
+---
+
+### **Proposed Solution**
+
+The solution involves:
+1. **Fixing the `embed_and_store_data` function**:
+   - Handle JSON files with varying structures.
+   - Ensure metadata is correctly extracted and stored in ChromaDB.
+
+2. **Improving Query Processing**:
+   - Embed the query and search in ChromaDB.
+   - Pass all matching results to the LLM for summarization.
+
+3. **Enhancing Summarization**:
+   - Include `CVE ID`, `SNYK ID`, `description`, and `affected versions` in the summary.
+   - Handle missing fields gracefully.
 
 ---
 
 ### **Updated Code Implementation**
-
-Below is the complete updated code that meets your requirements.
-
----
 
 #### **`main.py`**
 ```python
@@ -48,11 +63,14 @@ def summarize_data(llm, data):
         cve_id = item.get("CVE ID", "N/A")
         snyk_id = item.get("id", "N/A")
         description = item.get("title", "No description available.")
-        summaries.append(f"CVE ID: {cve_id}\nSNYK ID: {snyk_id}\nDescription: {description}")
+        affected_versions = ", ".join(item.get("semver", {}).get("vulnerable", [])) or "N/A"
+        summaries.append(
+            f"CVE ID: {cve_id}\nSNYK ID: {snyk_id}\nDescription: {description}\nAffected Versions: {affected_versions}"
+        )
 
     # Combine summaries and pass to the LLM for a concise summary
     combined_text = "\n\n".join(summaries)
-    prompt = f"Summarize the following data concisely:\n\n{combined_text}\n\nSummary (include CVE ID, SNYK ID, and description):"
+    prompt = f"Summarize the following data concisely:\n\n{combined_text}\n\nSummary (include CVE ID, SNYK ID, description, and affected versions):"
     return llm.invoke(prompt)
 
 def process_query(query, vectorstore, llm):
@@ -60,7 +78,7 @@ def process_query(query, vectorstore, llm):
     # Search in ChromaDB
     results = search_in_chromadb(query, vectorstore)
     if results:
-        # Extract page content from results
+        # Extract metadata from results
         data = [result.metadata for result in results]
         return summarize_data(llm, data)
 
@@ -113,16 +131,31 @@ def embed_and_store_data(json_files, embeddings, persist_dir):
         if isinstance(file, dict) and "vulnerabilities" in file:
             for item in file["vulnerabilities"]:
                 text = json.dumps(item)  # Convert the JSON object to a string
-                metadata = {"CVE ID": item.get("CVE ID", "N/A"), "id": item.get("id", "N/A"), "title": item.get("title", "No description available.")}
+                metadata = {
+                    "CVE ID": item.get("CVE ID", "N/A"),
+                    "id": item.get("id", "N/A"),
+                    "title": item.get("title", "No description available."),
+                    "semver": item.get("semver", {}),
+                }
                 vectorstore.add_texts([text], metadatas=[metadata])
         elif isinstance(file, list):
             for item in file:
                 text = json.dumps(item)  # Convert the JSON object to a string
-                metadata = {"CVE ID": item.get("CVE ID", "N/A"), "id": item.get("id", "N/A"), "title": item.get("title", "No description available.")}
+                metadata = {
+                    "CVE ID": item.get("CVE ID", "N/A"),
+                    "id": item.get("id", "N/A"),
+                    "title": item.get("title", "No description available."),
+                    "semver": item.get("semver", {}),
+                }
                 vectorstore.add_texts([text], metadatas=[metadata])
         else:
             text = json.dumps(file)  # Convert the JSON object to a string
-            metadata = {"CVE ID": "N/A", "id": "N/A", "title": "No description available."}
+            metadata = {
+                "CVE ID": "N/A",
+                "id": "N/A",
+                "title": "No description available.",
+                "semver": {},
+            }
             vectorstore.add_texts([text], metadatas=[metadata])
     return vectorstore
 
@@ -185,20 +218,17 @@ EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Pa
 ### **Key Features**
 
 1. **Data Embedding**:
-   - All JSON files are embedded and stored in ChromaDB with metadata (`CVE ID`, `SNYK ID`, and description).
+   - All JSON files are embedded and stored in ChromaDB with metadata (`CVE ID`, `SNYK ID`, `description`, and `affected versions`).
 
 2. **Query Handling**:
    - Queries are embedded and searched in ChromaDB.
    - Results are passed to the LLM for summarization.
 
 3. **Summary Generation**:
-   - Summaries include `CVE ID`, `SNYK ID`, and a concise description.
+   - Summaries include `CVE ID`, `SNYK ID`, `description`, and `affected versions`.
 
 4. **Error Handling**:
-   - Fixed issues like `AttributeError` and `TypeError`.
-
-5. **Preserved Functionality**:
-   - Original functionality is preserved while meeting the new requirements.
+   - Handles missing fields gracefully.
 
 ---
 
@@ -211,7 +241,7 @@ EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Pa
    - Test with `SNYK ID`, `CVE ID`, and keywords to ensure correct results.
 
 3. **Test Summary Generation**:
-   - Verify that summaries include `CVE ID`, `SNYK ID`, and a concise description.
+   - Verify that summaries include `CVE ID`, `SNYK ID`, `description`, and `affected versions`.
 
 4. **Test Edge Cases**:
    - Test with invalid inputs or queries with no matches.
