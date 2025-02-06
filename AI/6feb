@@ -1,0 +1,87 @@
+
+Thank you for clarifying the issue. Let's focus solely on the **`AttributeError: 'str' object has no attribute 'get'`** error in the following line:
+
+```python
+affected_versions = ", ".join(item.get("semver", {}).get("vulnerable", [])) or "N/A"
+```
+
+---
+
+### **Root Cause**
+The error occurs because `item.get("semver", {})` is returning a string instead of a dictionary. This happens when the `semver` field in your JSON data is not structured as expected. Specifically:
+- The code assumes `semver` is a dictionary with a key `vulnerable` that contains a list.
+- However, in your JSON, `semver` might be a string or another unexpected type.
+
+---
+
+### **Solution**
+We need to ensure that `semver` is a dictionary before attempting to call `.get("vulnerable", [])`. If it is not, we should handle it gracefully.
+
+---
+
+### **Updated Code**
+Here’s the corrected code to handle this scenario:
+
+```python
+# Safely handle the 'semver' field
+semver = item.get("semver", {})
+if isinstance(semver, dict):
+    vulnerable_versions = semver.get("vulnerable", [])
+    if isinstance(vulnerable_versions, list):
+        affected_versions = ", ".join(vulnerable_versions) or "N/A"
+    else:
+        affected_versions = "N/A"
+else:
+    affected_versions = "N/A"
+```
+
+This code:
+1. Checks if `semver` is a dictionary.
+2. If it is, it retrieves the `vulnerable` key and ensures it is a list.
+3. If any of these conditions fail, it defaults `affected_versions` to `"N/A"`.
+
+---
+
+### **Simplified One-Liner**
+If you prefer a more compact version:
+
+```python
+affected_versions = (
+    ", ".join(item.get("semver", {}).get("vulnerable", []))
+    if isinstance(item.get("semver", {}), dict) and isinstance(item.get("semver", {}).get("vulnerable", []), list)
+    else "N/A"
+)
+```
+
+---
+
+### **Testing**
+To ensure this works, test it with the following scenarios:
+1. `semver` is a dictionary with a `vulnerable` key containing a list:
+   ```json
+   "semver": { "vulnerable": ["2.0", "2.14.0"] }
+   ```
+   **Result:** `"2.0, 2.14.0"`
+
+2. `semver` is a dictionary without a `vulnerable` key:
+   ```json
+   "semver": { "fixed": ["2.14.0"] }
+   ```
+   **Result:** `"N/A"`
+
+3. `semver` is a string:
+   ```json
+   "semver": "some string"
+   ```
+   **Result:** `"N/A"`
+
+4. `semver` is missing:
+   ```json
+   {}
+   ```
+   **Result:** `"N/A"`
+
+---
+
+### **Final Integration**
+Replace the problematic line in your code with the updated logic. Let me know if you encounter any further issues!
