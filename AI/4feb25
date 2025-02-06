@@ -1,13 +1,13 @@
 
-### **Analysis of Errors**
+### **Analysis of Issues**
 
-From the provided screenshots and error messages, here are the identified issues:
+From the provided screenshots and error messages, the following issues are identified:
 
 1. **`AttributeError: 'list' object has no attribute 'get'`**:
-   - This occurs because the code assumes that the JSON structure always contains a dictionary with a `get` method, but some files or parts of the JSON are lists.
+   - This occurs because the code assumes that the JSON structure always contains a dictionary with a `get` method, but some parts of the JSON are lists.
 
 2. **`ValueError: Expected metadata value to be str, int, float, or bool, got {} which is dict`**:
-   - This happens because the metadata passed to ChromaDB contains unsupported types (e.g., dictionaries or lists). Metadata values must be strings, integers, floats, or booleans.
+   - This happens because the metadata passed to ChromaDB contains unsupported types (e.g., dictionaries). Metadata values must be strings, integers, floats, or booleans.
 
 3. **`ValueError: Expected embeddings to be a list of floats`**:
    - This indicates that the embeddings passed to ChromaDB are not in the correct format. The embeddings must be a list of floats.
@@ -63,7 +63,7 @@ def summarize_data(llm, data, chunk_size=512):
         cve_id = item.get("CVE ID", "N/A")
         snyk_id = item.get("id", "N/A")
         description = item.get("title", "No description available.")
-        affected_versions = ", ".join(item.get("semver", {}).get("vulnerable", [])) or "N/A"
+        affected_versions = ", ".join(item.get("semver", {}).get("vulnerable", [])) if isinstance(item.get("semver", {}).get("vulnerable", []), list) else "N/A"
         summaries.append(
             f"CVE ID: {cve_id}\nSNYK ID: {snyk_id}\nDescription: {description}\nAffected Versions: {affected_versions}"
         )
@@ -76,7 +76,7 @@ def summarize_data(llm, data, chunk_size=512):
     final_summary = []
     for chunk in chunks:
         prompt = f"Summarize the following data concisely:\n\n{chunk}\n\nSummary (include CVE ID, SNYK ID, description, and affected versions):"
-        final_summary.append(llm.invoke(prompt))
+        final_summary.append(llm(prompt))
     return "\n\n".join(final_summary)
 
 def process_query(query, vectorstore, llm):
