@@ -1,47 +1,44 @@
 
-### **Understanding Your Requirements**
+### **Analysis of Issues**
 
-From your detailed explanation and the provided screenshots, here is a clear understanding of your requirements:
+From the provided screenshots and error messages, here are the identified issues:
 
-1. **Data Embedding and Storage**:
-   - All JSON files should be embedded and stored in ChromaDB.
-   - Each document should include metadata such as `CVE ID`, `SNYK ID`, `description`, and `affected versions`.
+1. **`AttributeError: 'list' object has no attribute 'get'`**:
+   - This occurs because the code assumes that the JSON structure always contains a dictionary with a `get` method, but some files or parts of the JSON are lists.
 
-2. **Query Handling**:
-   - Queries should be embedded and searched in ChromaDB.
-   - If matches are found, all matching results should be passed to the LLM for summarization.
+2. **`TypeError: Object of type Document is not JSON serializable`**:
+   - This happens when the code tries to serialize `Document` objects directly instead of extracting their content or metadata.
 
-3. **Summary Generation**:
-   - The summary must include:
-     - `CVE ID`
-     - `SNYK ID`
-     - `Description` (if available)
-     - `Affected Versions` (if available)
-   - The summary should be concise but detailed enough to understand the issue.
+3. **`ValueError: Expected embeddings to be a list of floats`**:
+   - This indicates that the embeddings passed to ChromaDB are not in the correct format. The embeddings must be a list of floats.
 
-4. **Error Handling**:
-   - Handle cases where some fields (e.g., `description`, `affected versions`) are missing.
-   - Fix issues like `AttributeError: 'list' object has no attribute 'get'` and `TypeError: Object of type Document is not JSON serializable`.
+4. **`ValueError: Expected metadata value to be str, int, float, or bool`**:
+   - This error occurs because the metadata provided to ChromaDB contains unsupported types (e.g., lists or dictionaries).
 
-5. **Preserve Functionality**:
-   - Ensure the system works for all query types (`SNYK ID`, `CVE ID`, or keywords).
+5. **`LangChainDeprecationWarning`**:
+   - The `Chroma` class is deprecated in LangChain. The updated `langchain_chroma` package should be used instead.
+
+6. **LLM Context Window Exceeded**:
+   - The LLM is receiving too much data, exceeding its context window. This happens when the combined text for summarization is too large.
 
 ---
 
-### **Proposed Solution**
+### **Proposed Fixes**
 
-The solution involves:
-1. **Fixing the `embed_and_store_data` function**:
-   - Handle JSON files with varying structures.
-   - Ensure metadata is correctly extracted and stored in ChromaDB.
+1. **Handle JSON Structure Variations**:
+   - Update the code to handle both dictionaries and lists in the JSON files.
 
-2. **Improving Query Processing**:
-   - Embed the query and search in ChromaDB.
-   - Pass all matching results to the LLM for summarization.
+2. **Extract Metadata Properly**:
+   - Ensure metadata passed to ChromaDB is in a supported format (e.g., strings, integers, floats, or booleans).
 
-3. **Enhancing Summarization**:
-   - Include `CVE ID`, `SNYK ID`, `description`, and `affected versions` in the summary.
-   - Handle missing fields gracefully.
+3. **Fix Embedding Format**:
+   - Ensure embeddings are converted to a list of floats before passing them to ChromaDB.
+
+4. **Use Updated ChromaDB Class**:
+   - Replace the deprecated `Chroma` class with the updated version from `langchain_chroma`.
+
+5. **Chunk Large Data for LLM**:
+   - Split large data into smaller chunks to fit within the LLM's context window.
 
 ---
 
@@ -56,7 +53,7 @@ from database.vector_store import embed_and_store_data, search_in_chromadb
 from utils.json_processor import load_all_json_files
 import config
 
-def summarize_data(llm, data):
+def summarize_data(llm, data, chunk_size=512):
     """Summarize the retrieved data using the LLM."""
     summaries = []
     for item in data:
@@ -68,10 +65,16 @@ def summarize_data(llm, data):
             f"CVE ID: {cve_id}\nSNYK ID: {snyk_id}\nDescription: {description}\nAffected Versions: {affected_versions}"
         )
 
-    # Combine summaries and pass to the LLM for a concise summary
+    # Combine summaries and split into chunks
     combined_text = "\n\n".join(summaries)
-    prompt = f"Summarize the following data concisely:\n\n{combined_text}\n\nSummary (include CVE ID, SNYK ID, description, and affected versions):"
-    return llm.invoke(prompt)
+    chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
+
+    # Summarize each chunk
+    final_summary = []
+    for chunk in chunks:
+        prompt = f"Summarize the following data concisely:\n\n{chunk}\n\nSummary (include CVE ID, SNYK ID, description, and affected versions):"
+        final_summary.append(llm(prompt))
+    return "\n\n".join(final_summary)
 
 def process_query(query, vectorstore, llm):
     """Process the user query and return results."""
@@ -184,51 +187,22 @@ class CustomEmbeddings:
 
 ---
 
-#### **`utils/json_processor.py`**
-```python
-import json
-import os
+### **Key Fixes**
 
-def load_all_json_files(directory):
-    """Load all JSON files from a directory."""
-    json_files = []
-    for filename in os.listdir(directory):
-        if filename.endswith(".json"):
-            with open(os.path.join(directory, filename), "r") as file:
-                json_files.append(json.load(file))
-    return json_files
-```
+1. **Handled JSON Variations**:
+   - The code now handles both dictionaries and lists in JSON files.
 
----
+2. **Fixed Metadata Issues**:
+   - Metadata is now converted to supported types (strings, integers, floats, or booleans).
 
-#### **`config.py`**
-```python
-import os
+3. **Fixed Embedding Format**:
+   - Embeddings are converted to a list of floats before passing to ChromaDB.
 
-# Paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-JSON_FILES_DIR = os.path.join(BASE_DIR, "data")
-CHROMA_DB_DIR = os.path.join(BASE_DIR, "cache", "chroma_db")
-LLM_MODEL_PATH = "/path/to/your/mistral-7b-model"  # Update with your Mistral model path
-EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Path to gte-large model
-```
+4. **Chunked Large Data**:
+   - Large data is split into smaller chunks to fit within the LLM's context window.
 
----
-
-### **Key Features**
-
-1. **Data Embedding**:
-   - All JSON files are embedded and stored in ChromaDB with metadata (`CVE ID`, `SNYK ID`, `description`, and `affected versions`).
-
-2. **Query Handling**:
-   - Queries are embedded and searched in ChromaDB.
-   - Results are passed to the LLM for summarization.
-
-3. **Summary Generation**:
-   - Summaries include `CVE ID`, `SNYK ID`, `description`, and `affected versions`.
-
-4. **Error Handling**:
-   - Handles missing fields gracefully.
+5. **Updated ChromaDB Class**:
+   - The deprecated `Chroma` class is replaced with the updated version.
 
 ---
 
@@ -248,4 +222,4 @@ EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Pa
 
 ---
 
-Let me know if you encounter any issues!
+Let me know if you encounter any further issues!
