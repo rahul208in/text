@@ -1,87 +1,125 @@
 
-Thank you for clarifying the issue. Let's focus solely on the **`AttributeError: 'str' object has no attribute 'get'`** error in the following line:
+### **Understanding the Issue**
 
+From your description and the provided context, the issue is that:
+1. **Queries are not returning responses**:
+   - When entering valid keywords or IDs present in the JSON, the system responds with "no data available" or "no summary available."
+   - This indicates that the data embedded in ChromaDB is not being retrieved correctly during the query process.
+
+2. **You want to debug the raw response**:
+   - You want to see the raw response retrieved from ChromaDB and the source of the response before it is passed to the LLM for summarization.
+
+---
+
+### **Steps to Debug and Fix**
+
+#### **1. Verify Data Embedding in ChromaDB**
+Ensure that the data is being embedded correctly into ChromaDB. Add a debug statement to print the data being embedded.
+
+In your `embed_and_store_data` function (likely in `vector_store.py`), add the following:
 ```python
-affected_versions = ", ".join(item.get("semver", {}).get("vulnerable", [])) or "N/A"
+print(f"Embedding data: {text}")
+print(f"Metadata: {metadata}")
+```
+
+This will confirm that the data and metadata are being embedded as expected.
+
+---
+
+#### **2. Debug the Query Process**
+Modify the `process_query` function to print the raw results retrieved from ChromaDB.
+
+Here’s an updated version of the `process_query` function:
+```python
+def process_query(query, vectorstore, llm):
+    """Process the user query and return results."""
+    # Search in ChromaDB
+    results = vectorstore.similarity_search(query, k=5)  # Adjust `k` as needed
+    print(f"Raw results from ChromaDB: {results}")  # Debug: Print raw results
+
+    if results:
+        # Extract metadata from results
+        data = [result.metadata for result in results]
+        print(f"Extracted metadata: {data}")  # Debug: Print extracted metadata
+        return summarize_data(llm, data)  # Pass to summarization function
+
+    return "No relevant data found for your query."
 ```
 
 ---
 
-### **Root Cause**
-The error occurs because `item.get("semver", {})` is returning a string instead of a dictionary. This happens when the `semver` field in your JSON data is not structured as expected. Specifically:
-- The code assumes `semver` is a dictionary with a key `vulnerable` that contains a list.
-- However, in your JSON, `semver` might be a string or another unexpected type.
+#### **3. Debug the Summarization Process**
+In the `summarize_data` function, print the data being passed to the LLM for summarization.
 
----
-
-### **Solution**
-We need to ensure that `semver` is a dictionary before attempting to call `.get("vulnerable", [])`. If it is not, we should handle it gracefully.
-
----
-
-### **Updated Code**
-Here’s the corrected code to handle this scenario:
-
+Here’s an updated version of the `summarize_data` function:
 ```python
-# Safely handle the 'semver' field
-semver = item.get("semver", {})
-if isinstance(semver, dict):
-    vulnerable_versions = semver.get("vulnerable", [])
-    if isinstance(vulnerable_versions, list):
-        affected_versions = ", ".join(vulnerable_versions) or "N/A"
-    else:
-        affected_versions = "N/A"
-else:
-    affected_versions = "N/A"
-```
+def summarize_data(llm, data, chunk_size=512):
+    """Summarize the retrieved data using the LLM."""
+    print(f"Data passed to summarization: {data}")  # Debug: Print data before summarization
 
-This code:
-1. Checks if `semver` is a dictionary.
-2. If it is, it retrieves the `vulnerable` key and ensures it is a list.
-3. If any of these conditions fail, it defaults `affected_versions` to `"N/A"`.
+    summaries = []
+    for item in data:
+        cve_id = item.get("CVE ID", "N/A")
+        snyk_id = item.get("id", "N/A")
+        description = item.get("title", "No description available.")
+        affected_versions = ", ".join(item.get("semver", {}).get("vulnerable", [])) if isinstance(item.get("semver", {}).get("vulnerable", []), list) else "N/A"
+        summaries.append(
+            f"CVE ID: {cve_id}\nSNYK ID: {snyk_id}\nDescription: {description}\nAffected Versions: {affected_versions}"
+        )
 
----
+    # Combine summaries and split into chunks
+    combined_text = "\n\n".join(summaries)
+    print(f"Combined text for LLM: {combined_text}")  # Debug: Print combined text
 
-### **Simplified One-Liner**
-If you prefer a more compact version:
+    chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
 
-```python
-affected_versions = (
-    ", ".join(item.get("semver", {}).get("vulnerable", []))
-    if isinstance(item.get("semver", {}), dict) and isinstance(item.get("semver", {}).get("vulnerable", []), list)
-    else "N/A"
-)
+    # Summarize each chunk
+    final_summary = []
+    for chunk in chunks:
+        prompt = f"Summarize the following data concisely:\n\n{chunk}\n\nSummary (include CVE ID, SNYK ID, description, and affected versions):"
+        print(f"Prompt sent to LLM: {prompt}")  # Debug: Print prompt
+        final_summary.append(llm.invoke(prompt))
+    return "\n\n".join(final_summary)
 ```
 
 ---
 
-### **Testing**
-To ensure this works, test it with the following scenarios:
-1. `semver` is a dictionary with a `vulnerable` key containing a list:
-   ```json
-   "semver": { "vulnerable": ["2.0", "2.14.0"] }
-   ```
-   **Result:** `"2.0, 2.14.0"`
-
-2. `semver` is a dictionary without a `vulnerable` key:
-   ```json
-   "semver": { "fixed": ["2.14.0"] }
-   ```
-   **Result:** `"N/A"`
-
-3. `semver` is a string:
-   ```json
-   "semver": "some string"
-   ```
-   **Result:** `"N/A"`
-
-4. `semver` is missing:
-   ```json
-   {}
-   ```
-   **Result:** `"N/A"`
+#### **4. Test with a Valid Query**
+Run the program and:
+1. Enter a valid keyword or ID.
+2. Observe the debug outputs:
+   - Check the raw results from ChromaDB.
+   - Check the metadata extracted from the results.
+   - Check the data passed to the LLM for summarization.
+   - Check the prompt sent to the LLM.
 
 ---
 
-### **Final Integration**
-Replace the problematic line in your code with the updated logic. Let me know if you encounter any further issues!
+### **Expected Debug Outputs**
+1. **Embedding Data**:
+   - Ensure that the data and metadata being embedded into ChromaDB match the JSON file.
+
+2. **Raw Results from ChromaDB**:
+   - Ensure that the query retrieves relevant results from ChromaDB.
+
+3. **Extracted Metadata**:
+   - Ensure that the metadata extracted from the results matches the expected structure.
+
+4. **Data Passed to Summarization**:
+   - Ensure that the data passed to the LLM contains the expected fields (e.g., `CVE ID`, `SNYK ID`, `title`, `semver`).
+
+5. **Prompt Sent to LLM**:
+   - Ensure that the prompt sent to the LLM is well-formed and contains the relevant data.
+
+---
+
+### **Next Steps**
+1. Run the program with the debug statements.
+2. Share the debug outputs for the following:
+   - Raw results from ChromaDB.
+   - Extracted metadata.
+   - Data passed to the LLM.
+   - Prompt sent to the LLM.
+3. Based on the outputs, we can identify where the issue lies (e.g., embedding, querying, or summarization).
+
+Let me know how it goes!
