@@ -1,13 +1,36 @@
 
-### **Updated Code to Use `config.py`**
+### **Analysis of the Issue**
 
-Based on your project structure and the provided details, I have updated the code to use `config.py` for paths and configurations. This ensures that the base directory, JSON file directory, ChromaDB directory, LLM model path, and other configurations are centralized and reusable.
+From the provided screenshots and context, the following issues are identified:
+
+1. **Same Search Results for All Queries**:
+   - This indicates that the query embedding or the database search is not functioning correctly. Either the query is not being embedded properly, or the database is not storing/retrieving the data correctly.
+
+2. **Debugging Required**:
+   - We need to verify that:
+     - All JSON files in the `data/` folder are being embedded and stored in ChromaDB.
+     - The query is being embedded and searched in the database.
+
+3. **Errors in Metadata and Embedding**:
+   - The error `Expected metadata value to be str, int, float, or bool, got {} which is dict` suggests that invalid metadata (e.g., a dictionary) is being passed to ChromaDB. Metadata must be simple types like strings or numbers.
+
+4. **`AttributeError: 'list' object has no attribute 'get'`**:
+   - This occurs because the code is trying to call `.get()` on a list instead of a dictionary. This indicates an issue with how the JSON structure is being handled.
+
+5. **Debugging Steps**:
+   - Add debug statements to verify:
+     - The data being embedded into ChromaDB.
+     - The query embedding and search results.
 
 ---
 
-### **Updated `vector_store.py`**
+### **Updated Code with Debugging**
 
-This updated version of `vector_store.py` uses `config.py` for paths and includes the JSON file name as metadata.
+Below is the updated code for `vector_store.py` and `main.py` with added debugging to verify the embedding and search process.
+
+---
+
+#### **Updated `vector_store.py`**
 
 ```python
 import os
@@ -18,7 +41,6 @@ import config
 
 def embed_and_store_data(embeddings):
     """Embed and store data in ChromaDB."""
-    # Initialize ChromaDB with the persistence directory
     vectorstore = Chroma(persist_directory=config.CHROMA_DB_DIR, embedding_function=embeddings)
 
     # Iterate over all JSON files in the directory
@@ -59,6 +81,11 @@ def embed_and_store_data(embeddings):
                 # Use the file name as metadata
                 metadata = {"source": file_name, "snyk_id": snyk_id, "cve_id": cve_id}
 
+                # Debugging: Print the data being embedded
+                print(f"Embedding data from file: {file_name}")
+                print(f"Text: {text}")
+                print(f"Metadata: {metadata}")
+
                 # Add text and metadata to the vectorstore
                 try:
                     vectorstore.add_texts([text], metadatas=[metadata])
@@ -70,9 +97,7 @@ def embed_and_store_data(embeddings):
 
 ---
 
-### **Updated `main.py`**
-
-The `main.py` file is updated to use `config.py` for paths and configurations. It initializes the LLM and embeddings, embeds data into ChromaDB, and processes queries.
+#### **Updated `main.py`**
 
 ```python
 import os
@@ -80,7 +105,6 @@ import config
 from langchain.llms import LlamaCpp
 from langchain.embeddings import HuggingFaceEmbeddings
 from database.vector_store import embed_and_store_data
-from utils.json_processor import load_all_json_files
 from contextlib import contextmanager
 import sys
 
@@ -103,10 +127,19 @@ def suppress_stdout_stderr():
 
 def process_query(query, vectorstore, llm):
     """Process the user query and return results."""
+    # Debugging: Print the query
+    print(f"Processing query: {query}")
+
     # Search in ChromaDB
     results = vectorstore.similarity_search(query, k=5)  # Adjust `k` as needed
     if not results:
         return "No relevant data found for your query."
+
+    # Debugging: Print the raw results
+    print("Search results:")
+    for result in results:
+        print(f"Content: {result.page_content}")
+        print(f"Metadata: {result.metadata}")
 
     # Extract metadata and content from results
     data = []
@@ -150,7 +183,7 @@ def summarize_data(llm, data, chunk_size=512):
 def main():
     # Load JSON files
     print("Loading JSON files...")
-    json_files = load_all_json_files(config.JSON_FILES_DIR)
+    json_files = os.listdir(config.JSON_FILES_DIR)
 
     # Initialize the LLM
     print("Initializing the LLM...")
@@ -196,57 +229,29 @@ if __name__ == "__main__":
 
 ---
 
-### **Updated `config.py`**
+### **Debugging Steps**
 
-Ensure your `config.py` includes the following paths and configurations:
+1. **Verify Embedding**:
+   - Check the debug output to ensure all JSON files are being embedded into ChromaDB.
+   - Verify the text and metadata being embedded.
 
-```python
-import os
+2. **Verify Query Search**:
+   - Check the debug output for the query and the search results.
+   - Ensure the results are relevant to the query.
 
-BASE_DIR = "/Users/rj22898/Documents/JUNK/json_rag_project"
-JSON_FILES_DIR = os.path.join(BASE_DIR, "data")
-CHROMA_DB_DIR = os.path.join(BASE_DIR, "cache/chroma_db")
-LLM_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/mistral-7b"
-EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"
-```
-
----
-
-### **Testing Steps**
-
-1. **Prepare JSON Files**:
-   - Place JSON files in the directory specified by `config.JSON_FILES_DIR`.
-
-2. **Run the Program**:
-   - Execute `main.py` to embed the data into ChromaDB.
-
-3. **Test Queries**:
-   - Test with `SNYK ID`, `CVE ID`, and keywords.
-   - Verify that the output includes `CVE ID`, `SNYK ID`, and the source JSON file name.
+3. **Test with Different Queries**:
+   - Test with `SNYK ID`, `CVE ID`, and keywords to ensure the system retrieves relevant results.
 
 ---
 
-### **Expected Output**
+### **Expected Debug Output**
 
-For a query like `SNYK-JAVA-COMMONSIO-8161190`, the output might look like this:
+1. **Embedding Debug Output**:
+   - For each JSON file, you should see the text and metadata being embedded.
 
-```json
-[
-    {
-        "summary": "CVE ID: CVE-2023-1234, SNYK ID: SNYK-JAVA-COMMONSIO-8161190, Description: Uncontrolled resource consumption.",
-        "snyk_id": "SNYK-JAVA-COMMONSIO-8161190",
-        "cve_id": "CVE-2023-1234",
-        "source": "sample1.json"
-    },
-    {
-        "summary": "CVE ID: CVE-2023-5678, SNYK ID: N/A, Description: Another vulnerability.",
-        "snyk_id": "N/A",
-        "cve_id": "CVE-2023-5678",
-        "source": "sample2.json"
-    }
-]
-```
+2. **Query Debug Output**:
+   - For each query, you should see the query text and the search results (content and metadata).
 
 ---
 
-Let me know if you encounter any issues or need further adjustments!
+Let me know if this resolves the issue or if further adjustments are needed!
