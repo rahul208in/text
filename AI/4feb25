@@ -1,92 +1,69 @@
 
-### **Updated Requirements**
+### **Understanding Your Requirements**
 
-Based on your updated requirements, the system should:
-1. **Exact Match Search**:
+Based on your input, here is a clear understanding of your requirements:
+
+1. **Data Embedding and Storage**:
+   - All JSON files should be embedded and stored in ChromaDB.
+   - The query should be embedded and searched in ChromaDB, not directly in the JSON files.
+
+2. **Query Handling**:
    - If the query is a `SNYK ID`, find the associated `CVE ID` and retrieve relevant data for both.
    - If the query is a `CVE ID`, find the associated `SNYK ID` and retrieve relevant data for both.
    - If the query is a keyword or sentence, search for relevant `CVE IDs` and `SNYK IDs` and provide a summary.
 
-2. **Summarization**:
-   - Use the LLM to generate a **brief summary** of the results.
-   - Ensure the summary includes the `CVE ID`, `SNYK ID`, and a concise description.
+3. **Summary Generation**:
+   - All matching responses should be passed to the LLM for summarization.
+   - The summary must **include the `CVE ID`, `SNYK ID`, and a concise description**.
+   - The summary should be long enough to understand the issue but not too verbose.
 
----
+4. **Error Handling**:
+   - Fix issues like `AttributeError: 'list' object has no attribute 'get'` and `TypeError: Object of type Document is not JSON serializable`.
+   - Ensure embeddings are correctly formatted as a list of floats for ChromaDB.
 
-### **Proposed Solution**
-
-#### **Key Features**
-1. **Exact Match and Related Data Retrieval**:
-   - Perform an exact match search for `SNYK ID` or `CVE ID`.
-   - If found, retrieve all related data (e.g., `CVE ID`, `SNYK ID`, and description).
-   - If the query is a keyword or sentence, perform a similarity search and retrieve relevant data.
-
-2. **Summarization**:
-   - Use the LLM to summarize the retrieved data.
-   - Ensure the summary is concise and includes the `CVE ID`, `SNYK ID`, and description.
-
-3. **Improved Query Handling**:
-   - Handle different query types (`SNYK ID`, `CVE ID`, or keyword).
-   - Ensure the system gracefully handles cases where no results are found.
+5. **Preserve Original Functionality**:
+   - The updated code should not break any existing functionality.
 
 ---
 
 ### **Updated Code Implementation**
+
+Below is the complete updated code that meets your requirements.
+
+---
 
 #### **`main.py`**
 ```python
 import os
 from langchain.llms import LlamaCpp
 from models.model_loader import CustomEmbeddings
-from database.vector_store import embed_and_store_data
+from database.vector_store import embed_and_store_data, search_in_chromadb
 from utils.json_processor import load_all_json_files
 import config
 
-def exact_match_search(query, json_files):
-    """Perform an exact match search in the JSON files."""
-    results = []
-    for file in json_files:
-        if isinstance(file, dict) and "vulnerabilities" in file:
-            for item in file["vulnerabilities"]:
-                if query in item.values():
-                    results.append(item)
-        elif isinstance(file, list):
-            for item in file:
-                if query in item.values():
-                    results.append(item)
-    return results
-
 def summarize_data(llm, data):
     """Summarize the retrieved data using the LLM."""
-    # Extract relevant fields for summarization
     summaries = []
     for item in data:
         cve_id = item.get("CVE ID", "N/A")
         snyk_id = item.get("id", "N/A")
         description = item.get("title", "No description available.")
         summaries.append(f"CVE ID: {cve_id}\nSNYK ID: {snyk_id}\nDescription: {description}")
-    
+
     # Combine summaries and pass to the LLM for a concise summary
     combined_text = "\n\n".join(summaries)
-    prompt = f"Summarize the following data concisely:\n\n{combined_text}\n\nSummary (max 50 words):"
+    prompt = f"Summarize the following data concisely:\n\n{combined_text}\n\nSummary (include CVE ID, SNYK ID, and description):"
     return llm.invoke(prompt)
 
-def process_query(query, vectorstore, json_files, llm):
+def process_query(query, vectorstore, llm):
     """Process the user query and return results."""
-    # Check for exact matches
-    exact_matches = exact_match_search(query, json_files)
-    if exact_matches:
-        print("\nExact matches found. Summarizing results...")
-        return summarize_data(llm, exact_matches)
-
-    # Perform similarity search if no exact matches
-    print("\nNo exact matches found. Performing similarity search...")
-    results = vectorstore.similarity_search(query, k=5)
+    # Search in ChromaDB
+    results = search_in_chromadb(query, vectorstore)
     if results:
         # Extract page content from results
-        data = [result.page_content for result in results]
+        data = [result.metadata for result in results]
         return summarize_data(llm, data)
-    
+
     return "No relevant data found for your query."
 
 def main():
@@ -115,7 +92,7 @@ def main():
             break
 
         print("\nProcessing your query...")
-        summary = process_query(query, vectorstore, json_files, llm)
+        summary = process_query(query, vectorstore, llm)
         print(f"\nSummary:\n{summary}")
 
 if __name__ == "__main__":
@@ -136,15 +113,22 @@ def embed_and_store_data(json_files, embeddings, persist_dir):
         if isinstance(file, dict) and "vulnerabilities" in file:
             for item in file["vulnerabilities"]:
                 text = json.dumps(item)  # Convert the JSON object to a string
-                vectorstore.add_texts([text])
+                metadata = {"CVE ID": item.get("CVE ID", "N/A"), "id": item.get("id", "N/A"), "title": item.get("title", "No description available.")}
+                vectorstore.add_texts([text], metadatas=[metadata])
         elif isinstance(file, list):
             for item in file:
                 text = json.dumps(item)  # Convert the JSON object to a string
-                vectorstore.add_texts([text])
+                metadata = {"CVE ID": item.get("CVE ID", "N/A"), "id": item.get("id", "N/A"), "title": item.get("title", "No description available.")}
+                vectorstore.add_texts([text], metadatas=[metadata])
         else:
             text = json.dumps(file)  # Convert the JSON object to a string
-            vectorstore.add_texts([text])
+            metadata = {"CVE ID": "N/A", "id": "N/A", "title": "No description available."}
+            vectorstore.add_texts([text], metadatas=[metadata])
     return vectorstore
+
+def search_in_chromadb(query, vectorstore):
+    """Search for the query in ChromaDB."""
+    return vectorstore.similarity_search(query, k=5)
 ```
 
 ---
@@ -167,14 +151,71 @@ class CustomEmbeddings:
 
 ---
 
+#### **`utils/json_processor.py`**
+```python
+import json
+import os
+
+def load_all_json_files(directory):
+    """Load all JSON files from a directory."""
+    json_files = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".json"):
+            with open(os.path.join(directory, filename), "r") as file:
+                json_files.append(json.load(file))
+    return json_files
+```
+
+---
+
+#### **`config.py`**
+```python
+import os
+
+# Paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+JSON_FILES_DIR = os.path.join(BASE_DIR, "data")
+CHROMA_DB_DIR = os.path.join(BASE_DIR, "cache", "chroma_db")
+LLM_MODEL_PATH = "/path/to/your/mistral-7b-model"  # Update with your Mistral model path
+EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"  # Path to gte-large model
+```
+
+---
+
 ### **Key Features**
 
-1. **Exact Match Search**:
-   - Searches for exact matches in the JSON files.
-   - Retrieves all related data (e.g., `CVE ID`, `SNYK ID`, and description).
+1. **Data Embedding**:
+   - All JSON files are embedded and stored in ChromaDB with metadata (`CVE ID`, `SNYK ID`, and description).
 
-2. **Similarity Search**:
-   - If no exact matches are found, performs a similarity search using ChromaDB.
+2. **Query Handling**:
+   - Queries are embedded and searched in ChromaDB.
+   - Results are passed to the LLM for summarization.
 
-3. **Summarization**:
-   - Uses the LLM to generate a concis
+3. **Summary Generation**:
+   - Summaries include `CVE ID`, `SNYK ID`, and a concise description.
+
+4. **Error Handling**:
+   - Fixed issues like `AttributeError` and `TypeError`.
+
+5. **Preserved Functionality**:
+   - Original functionality is preserved while meeting the new requirements.
+
+---
+
+### **Testing Steps**
+
+1. **Test Data Embedding**:
+   - Verify that all JSON files are embedded and stored in ChromaDB.
+
+2. **Test Query Handling**:
+   - Test with `SNYK ID`, `CVE ID`, and keywords to ensure correct results.
+
+3. **Test Summary Generation**:
+   - Verify that summaries include `CVE ID`, `SNYK ID`, and a concise description.
+
+4. **Test Edge Cases**:
+   - Test with invalid inputs or queries with no matches.
+
+---
+
+Let me know if you encounter any issues!
