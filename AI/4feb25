@@ -1,44 +1,47 @@
 
-### **Analysis of Issues**
+### **Analysis of Errors**
 
 From the provided screenshots and error messages, here are the identified issues:
 
 1. **`AttributeError: 'list' object has no attribute 'get'`**:
    - This occurs because the code assumes that the JSON structure always contains a dictionary with a `get` method, but some files or parts of the JSON are lists.
 
-2. **`TypeError: Object of type Document is not JSON serializable`**:
-   - This happens when the code tries to serialize `Document` objects directly instead of extracting their content or metadata.
+2. **`ValueError: Expected metadata value to be str, int, float, or bool, got {} which is dict`**:
+   - This happens because the metadata passed to ChromaDB contains unsupported types (e.g., dictionaries or lists). Metadata values must be strings, integers, floats, or booleans.
 
 3. **`ValueError: Expected embeddings to be a list of floats`**:
    - This indicates that the embeddings passed to ChromaDB are not in the correct format. The embeddings must be a list of floats.
 
-4. **`ValueError: Expected metadata value to be str, int, float, or bool`**:
-   - This error occurs because the metadata provided to ChromaDB contains unsupported types (e.g., lists or dictionaries).
+4. **`TypeError: Object of type Document is not JSON serializable`**:
+   - This happens when the code tries to serialize `Document` objects directly instead of extracting their content or metadata.
 
-5. **`LangChainDeprecationWarning`**:
-   - The `Chroma` class is deprecated in LangChain. The updated `langchain_chroma` package should be used instead.
-
-6. **LLM Context Window Exceeded**:
+5. **LLM Context Window Exceeded**:
    - The LLM is receiving too much data, exceeding its context window. This happens when the combined text for summarization is too large.
+
+6. **Deprecation Warning for `Chroma` Class**:
+   - The `Chroma` class is deprecated in LangChain. The updated `langchain_chroma` package should be used instead.
 
 ---
 
 ### **Proposed Fixes**
 
 1. **Handle JSON Structure Variations**:
-   - Update the code to handle both dictionaries and lists in the JSON files.
+   - Update the code to handle both dictionaries and lists in JSON files.
 
-2. **Extract Metadata Properly**:
+2. **Fix Metadata Issues**:
    - Ensure metadata passed to ChromaDB is in a supported format (e.g., strings, integers, floats, or booleans).
 
 3. **Fix Embedding Format**:
    - Ensure embeddings are converted to a list of floats before passing them to ChromaDB.
 
-4. **Use Updated ChromaDB Class**:
+4. **Chunk Large Data for LLM**:
+   - Split large data into smaller chunks to fit within the LLM's context window.
+
+5. **Use Updated ChromaDB Class**:
    - Replace the deprecated `Chroma` class with the updated version from `langchain_chroma`.
 
-5. **Chunk Large Data for LLM**:
-   - Split large data into smaller chunks to fit within the LLM's context window.
+6. **Graceful Handling of Missing Fields**:
+   - Handle cases where some fields (e.g., `description`, `affected versions`) are missing.
 
 ---
 
@@ -73,7 +76,7 @@ def summarize_data(llm, data, chunk_size=512):
     final_summary = []
     for chunk in chunks:
         prompt = f"Summarize the following data concisely:\n\n{chunk}\n\nSummary (include CVE ID, SNYK ID, description, and affected versions):"
-        final_summary.append(llm(prompt))
+        final_summary.append(llm.invoke(prompt))
     return "\n\n".join(final_summary)
 
 def process_query(query, vectorstore, llm):
@@ -138,8 +141,10 @@ def embed_and_store_data(json_files, embeddings, persist_dir):
                     "CVE ID": item.get("CVE ID", "N/A"),
                     "id": item.get("id", "N/A"),
                     "title": item.get("title", "No description available."),
-                    "semver": item.get("semver", {}),
+                    "semver": item.get("semver", {}).get("vulnerable", []),
                 }
+                # Ensure metadata values are valid
+                metadata = {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in metadata.items()}
                 vectorstore.add_texts([text], metadatas=[metadata])
         elif isinstance(file, list):
             for item in file:
@@ -148,41 +153,16 @@ def embed_and_store_data(json_files, embeddings, persist_dir):
                     "CVE ID": item.get("CVE ID", "N/A"),
                     "id": item.get("id", "N/A"),
                     "title": item.get("title", "No description available."),
-                    "semver": item.get("semver", {}),
+                    "semver": item.get("semver", {}).get("vulnerable", []),
                 }
+                # Ensure metadata values are valid
+                metadata = {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) for k, v in metadata.items()}
                 vectorstore.add_texts([text], metadatas=[metadata])
-        else:
-            text = json.dumps(file)  # Convert the JSON object to a string
-            metadata = {
-                "CVE ID": "N/A",
-                "id": "N/A",
-                "title": "No description available.",
-                "semver": {},
-            }
-            vectorstore.add_texts([text], metadatas=[metadata])
     return vectorstore
 
 def search_in_chromadb(query, vectorstore):
     """Search for the query in ChromaDB."""
     return vectorstore.similarity_search(query, k=5)
-```
-
----
-
-#### **`models/model_loader.py`**
-```python
-from sentence_transformers import SentenceTransformer
-
-class CustomEmbeddings:
-    """Custom wrapper for SentenceTransformer to add embed_query and embed_documents methods."""
-    def __init__(self, model_path: str):
-        self.model = SentenceTransformer(model_path)
-
-    def embed_query(self, query: str):
-        return self.model.encode(query, convert_to_tensor=False).tolist()
-
-    def embed_documents(self, documents: list):
-        return [self.model.encode(doc, convert_to_tensor=False).tolist() for doc in documents]
 ```
 
 ---
