@@ -1,71 +1,252 @@
 
-Yes, your assumption is correct. The issue likely lies in the **metadata** being generated during the embedding process. If the metadata contains fields that are not consistently present in all JSON files or if the metadata values are of unsupported types (e.g., dictionaries, lists), it can cause problems during querying or embedding.
+### **Updated Code to Use `config.py`**
 
-### **Proposed Solution**
-To simplify and ensure consistency, you can use the **JSON file name** as the metadata. This will allow you to track the source of the data and avoid issues caused by missing or inconsistent fields in the metadata.
+Based on your project structure and the provided details, I have updated the code to use `config.py` for paths and configurations. This ensures that the base directory, JSON file directory, ChromaDB directory, LLM model path, and other configurations are centralized and reusable.
 
 ---
 
-### **Updated Code for Metadata**
+### **Updated `vector_store.py`**
 
-#### **`vector_store.py`**
-Here’s the updated `embed_and_store_data` function:
+This updated version of `vector_store.py` uses `config.py` for paths and includes the JSON file name as metadata.
 
 ```python
-from langchain_chroma import Chroma
-import json
 import os
+import json
+from langchain_chroma import Chroma
+import config
 
-def embed_and_store_data(json_files, embeddings, persist_dir):
+
+def embed_and_store_data(embeddings):
     """Embed and store data in ChromaDB."""
-    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
+    # Initialize ChromaDB with the persistence directory
+    vectorstore = Chroma(persist_directory=config.CHROMA_DB_DIR, embedding_function=embeddings)
 
-    for file_path in json_files:
-        # Extract the file name to use as metadata
-        file_name = os.path.basename(file_path)
+    # Iterate over all JSON files in the directory
+    for file_name in os.listdir(config.JSON_FILES_DIR):
+        if file_name.endswith(".json"):
+            file_path = os.path.join(config.JSON_FILES_DIR, file_name)
 
-        # Load the JSON file
-        with open(file_path, "r") as f:
-            file_data = json.load(f)
+            # Load the JSON file
+            with open(file_path, "r") as f:
+                try:
+                    file_data = json.load(f)
+                except json.JSONDecodeError as e:
+                    print(f"Error decoding JSON file {file_name}: {e}")
+                    continue
 
-        # Check if the file contains vulnerabilities
-        if isinstance(file_data, dict) and "vulnerabilities" in file_data:
-            vulnerabilities = file_data["vulnerabilities"]
-
-            # Ensure vulnerabilities is a list
-            if isinstance(vulnerabilities, list):
-                for item in vulnerabilities:
-                    # Convert the JSON object to a string
-                    text = json.dumps(item)
-
-                    # Use the file name as metadata
-                    metadata = {"source": file_name}
-
-                    # Add text and metadata to the vectorstore
-                    vectorstore.add_texts([text], metadatas=[metadata])
+            # Process each record in the JSON file
+            if isinstance(file_data, dict):
+                records = file_data.get("vulnerabilities", [])
+                if not isinstance(records, list):
+                    print(f"Warning: 'vulnerabilities' is not a list in file {file_name}.")
+                    continue
+            elif isinstance(file_data, list):
+                records = file_data
             else:
-                print(f"Warning: 'vulnerabilities' is not a list in file {file_name}.")
-        else:
-            print(f"Warning: File {file_name} does not contain 'vulnerabilities' key or is not a dictionary.")
+                print(f"Warning: Unsupported JSON structure in file {file_name}.")
+                continue
+
+            for record in records:
+                # Extract relevant fields
+                snyk_id = record.get("id", "N/A")
+                cve_id = record.get("CVE", "N/A")
+                description = record.get("description", "N/A")
+                versions = record.get("semver", {}).get("vulnerable", [])
+
+                # Combine fields into a single text for embedding
+                text = f"SNYK ID: {snyk_id}\nCVE ID: {cve_id}\nDescription: {description}\nVersions: {', '.join(versions)}"
+
+                # Use the file name as metadata
+                metadata = {"source": file_name, "snyk_id": snyk_id, "cve_id": cve_id}
+
+                # Add text and metadata to the vectorstore
+                try:
+                    vectorstore.add_texts([text], metadatas=[metadata])
+                except ValueError as e:
+                    print(f"Error adding text to vectorstore for file {file_name}: {e}")
 
     return vectorstore
 ```
 
 ---
 
-### **Explanation of Changes**
-1. **Metadata Simplification**:
-   - The metadata now only contains the `source` field, which is the name of the JSON file. This ensures consistency and avoids issues caused by missing or unsupported fields.
+### **Updated `main.py`**
 
-2. **Error Handling**:
-   - Added checks to ensure `vulnerabilities` is a list and the file contains the expected structure.
+The `main.py` file is updated to use `config.py` for paths and configurations. It initializes the LLM and embeddings, embeds data into ChromaDB, and processes queries.
 
-3. **Debugging**:
-   - Added warnings to notify if a file does not contain the expected structure.
+```python
+import os
+import config
+from langchain.llms import LlamaCpp
+from langchain.embeddings import HuggingFaceEmbeddings
+from database.vector_store import embed_and_store_data
+from utils.json_processor import load_all_json_files
+from contextlib import contextmanager
+import sys
+
+
+@contextmanager
+def suppress_stdout_stderr():
+    """Context manager to suppress stdout and stderr."""
+    stdout = sys.stdout
+    stderr = sys.stderr
+    null_device = open(os.devnull, 'w')
+    try:
+        sys.stdout = null_device
+        sys.stderr = null_device
+        yield
+    finally:
+        sys.stdout = stdout
+        sys.stderr = stderr
+        null_device.close()
+
+
+def process_query(query, vectorstore, llm):
+    """Process the user query and return results."""
+    # Search in ChromaDB
+    results = vectorstore.similarity_search(query, k=5)  # Adjust `k` as needed
+    if not results:
+        return "No relevant data found for your query."
+
+    # Extract metadata and content from results
+    data = []
+    for result in results:
+        content = result.page_content
+        metadata = result.metadata
+        data.append({"content": content, "metadata": metadata})
+
+    # Pass the content to the LLM for summarization
+    summaries = summarize_data(llm, [item["content"] for item in data])
+
+    # Combine summaries with metadata
+    response = []
+    for summary, item in zip(summaries, data):
+        metadata = item["metadata"]
+        response.append({
+            "summary": summary,
+            "snyk_id": metadata.get("snyk_id", "N/A"),
+            "cve_id": metadata.get("cve_id", "N/A"),
+            "source": metadata.get("source", "Unknown")
+        })
+
+    return response
+
+
+def summarize_data(llm, data, chunk_size=512):
+    """Summarize the retrieved data using the LLM."""
+    summaries = []
+    for content in data:
+        # Split content into chunks
+        chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
+
+        # Summarize each chunk
+        for chunk in chunks:
+            prompt = f"Summarize the following data concisely:\n\n{chunk}\n\nSummary:"
+            summaries.append(llm.invoke(prompt))
+
+    return summaries
+
+
+def main():
+    # Load JSON files
+    print("Loading JSON files...")
+    json_files = load_all_json_files(config.JSON_FILES_DIR)
+
+    # Initialize the LLM
+    print("Initializing the LLM...")
+    with suppress_stdout_stderr():
+        llm = LlamaCpp(
+            model_path=config.LLM_MODEL_PATH,
+            temperature=0.7,
+            max_tokens=2000,
+            top_p=0.9,
+            verbose=True
+        )
+
+    # Initialize the embedding model
+    print("Initializing the embedding model...")
+    embeddings = HuggingFaceEmbeddings(
+        model_name=config.EMBEDDING_MODEL_PATH,
+        model_kwargs={"device": "cpu"}
+    )
+
+    # Embed and store data in ChromaDB
+    print("Embedding and storing data in ChromaDB...")
+    with suppress_stdout_stderr():
+        vectorstore = embed_and_store_data(embeddings)
+
+    print("Data embedding completed successfully!")
+
+    # Interactive query loop
+    print("\nReady for queries!")
+    while True:
+        query = input("\nEnter your query (SNYK ID, CVE ID, or keyword) or 'quit' to exit: ")
+        if query.lower() == "quit":
+            break
+
+        print("\nProcessing your query...")
+        response = process_query(query, vectorstore, llm)
+        print("\n=== Summary ===")
+        print(response)
+
+
+if __name__ == "__main__":
+    main()
+```
 
 ---
 
-### **Query Process Update**
-To include the source in the query response, update the `process_query` function to return the raw response along with the source.
+### **Updated `config.py`**
 
-####
+Ensure your `config.py` includes the following paths and configurations:
+
+```python
+import os
+
+BASE_DIR = "/Users/rj22898/Documents/JUNK/json_rag_project"
+JSON_FILES_DIR = os.path.join(BASE_DIR, "data")
+CHROMA_DB_DIR = os.path.join(BASE_DIR, "cache/chroma_db")
+LLM_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/mistral-7b"
+EMBEDDING_MODEL_PATH = "/Users/rj22898/Documents/model/Embedded/gte-large"
+```
+
+---
+
+### **Testing Steps**
+
+1. **Prepare JSON Files**:
+   - Place JSON files in the directory specified by `config.JSON_FILES_DIR`.
+
+2. **Run the Program**:
+   - Execute `main.py` to embed the data into ChromaDB.
+
+3. **Test Queries**:
+   - Test with `SNYK ID`, `CVE ID`, and keywords.
+   - Verify that the output includes `CVE ID`, `SNYK ID`, and the source JSON file name.
+
+---
+
+### **Expected Output**
+
+For a query like `SNYK-JAVA-COMMONSIO-8161190`, the output might look like this:
+
+```json
+[
+    {
+        "summary": "CVE ID: CVE-2023-1234, SNYK ID: SNYK-JAVA-COMMONSIO-8161190, Description: Uncontrolled resource consumption.",
+        "snyk_id": "SNYK-JAVA-COMMONSIO-8161190",
+        "cve_id": "CVE-2023-1234",
+        "source": "sample1.json"
+    },
+    {
+        "summary": "CVE ID: CVE-2023-5678, SNYK ID: N/A, Description: Another vulnerability.",
+        "snyk_id": "N/A",
+        "cve_id": "CVE-2023-5678",
+        "source": "sample2.json"
+    }
+]
+```
+
+---
+
+Let me know if you encounter any issues or need further adjustments!
