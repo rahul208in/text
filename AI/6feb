@@ -1,125 +1,71 @@
 
-### **Understanding the Issue**
+Yes, your assumption is correct. The issue likely lies in the **metadata** being generated during the embedding process. If the metadata contains fields that are not consistently present in all JSON files or if the metadata values are of unsupported types (e.g., dictionaries, lists), it can cause problems during querying or embedding.
 
-From your description and the provided context, the issue is that:
-1. **Queries are not returning responses**:
-   - When entering valid keywords or IDs present in the JSON, the system responds with "no data available" or "no summary available."
-   - This indicates that the data embedded in ChromaDB is not being retrieved correctly during the query process.
-
-2. **You want to debug the raw response**:
-   - You want to see the raw response retrieved from ChromaDB and the source of the response before it is passed to the LLM for summarization.
+### **Proposed Solution**
+To simplify and ensure consistency, you can use the **JSON file name** as the metadata. This will allow you to track the source of the data and avoid issues caused by missing or inconsistent fields in the metadata.
 
 ---
 
-### **Steps to Debug and Fix**
+### **Updated Code for Metadata**
 
-#### **1. Verify Data Embedding in ChromaDB**
-Ensure that the data is being embedded correctly into ChromaDB. Add a debug statement to print the data being embedded.
+#### **`vector_store.py`**
+Here’s the updated `embed_and_store_data` function:
 
-In your `embed_and_store_data` function (likely in `vector_store.py`), add the following:
 ```python
-print(f"Embedding data: {text}")
-print(f"Metadata: {metadata}")
-```
+from langchain_chroma import Chroma
+import json
+import os
 
-This will confirm that the data and metadata are being embedded as expected.
+def embed_and_store_data(json_files, embeddings, persist_dir):
+    """Embed and store data in ChromaDB."""
+    vectorstore = Chroma(persist_directory=persist_dir, embedding_function=embeddings)
 
----
+    for file_path in json_files:
+        # Extract the file name to use as metadata
+        file_name = os.path.basename(file_path)
 
-#### **2. Debug the Query Process**
-Modify the `process_query` function to print the raw results retrieved from ChromaDB.
+        # Load the JSON file
+        with open(file_path, "r") as f:
+            file_data = json.load(f)
 
-Here’s an updated version of the `process_query` function:
-```python
-def process_query(query, vectorstore, llm):
-    """Process the user query and return results."""
-    # Search in ChromaDB
-    results = vectorstore.similarity_search(query, k=5)  # Adjust `k` as needed
-    print(f"Raw results from ChromaDB: {results}")  # Debug: Print raw results
+        # Check if the file contains vulnerabilities
+        if isinstance(file_data, dict) and "vulnerabilities" in file_data:
+            vulnerabilities = file_data["vulnerabilities"]
 
-    if results:
-        # Extract metadata from results
-        data = [result.metadata for result in results]
-        print(f"Extracted metadata: {data}")  # Debug: Print extracted metadata
-        return summarize_data(llm, data)  # Pass to summarization function
+            # Ensure vulnerabilities is a list
+            if isinstance(vulnerabilities, list):
+                for item in vulnerabilities:
+                    # Convert the JSON object to a string
+                    text = json.dumps(item)
 
-    return "No relevant data found for your query."
-```
+                    # Use the file name as metadata
+                    metadata = {"source": file_name}
 
----
+                    # Add text and metadata to the vectorstore
+                    vectorstore.add_texts([text], metadatas=[metadata])
+            else:
+                print(f"Warning: 'vulnerabilities' is not a list in file {file_name}.")
+        else:
+            print(f"Warning: File {file_name} does not contain 'vulnerabilities' key or is not a dictionary.")
 
-#### **3. Debug the Summarization Process**
-In the `summarize_data` function, print the data being passed to the LLM for summarization.
-
-Here’s an updated version of the `summarize_data` function:
-```python
-def summarize_data(llm, data, chunk_size=512):
-    """Summarize the retrieved data using the LLM."""
-    print(f"Data passed to summarization: {data}")  # Debug: Print data before summarization
-
-    summaries = []
-    for item in data:
-        cve_id = item.get("CVE ID", "N/A")
-        snyk_id = item.get("id", "N/A")
-        description = item.get("title", "No description available.")
-        affected_versions = ", ".join(item.get("semver", {}).get("vulnerable", [])) if isinstance(item.get("semver", {}).get("vulnerable", []), list) else "N/A"
-        summaries.append(
-            f"CVE ID: {cve_id}\nSNYK ID: {snyk_id}\nDescription: {description}\nAffected Versions: {affected_versions}"
-        )
-
-    # Combine summaries and split into chunks
-    combined_text = "\n\n".join(summaries)
-    print(f"Combined text for LLM: {combined_text}")  # Debug: Print combined text
-
-    chunks = [combined_text[i:i+chunk_size] for i in range(0, len(combined_text), chunk_size)]
-
-    # Summarize each chunk
-    final_summary = []
-    for chunk in chunks:
-        prompt = f"Summarize the following data concisely:\n\n{chunk}\n\nSummary (include CVE ID, SNYK ID, description, and affected versions):"
-        print(f"Prompt sent to LLM: {prompt}")  # Debug: Print prompt
-        final_summary.append(llm.invoke(prompt))
-    return "\n\n".join(final_summary)
+    return vectorstore
 ```
 
 ---
 
-#### **4. Test with a Valid Query**
-Run the program and:
-1. Enter a valid keyword or ID.
-2. Observe the debug outputs:
-   - Check the raw results from ChromaDB.
-   - Check the metadata extracted from the results.
-   - Check the data passed to the LLM for summarization.
-   - Check the prompt sent to the LLM.
+### **Explanation of Changes**
+1. **Metadata Simplification**:
+   - The metadata now only contains the `source` field, which is the name of the JSON file. This ensures consistency and avoids issues caused by missing or unsupported fields.
+
+2. **Error Handling**:
+   - Added checks to ensure `vulnerabilities` is a list and the file contains the expected structure.
+
+3. **Debugging**:
+   - Added warnings to notify if a file does not contain the expected structure.
 
 ---
 
-### **Expected Debug Outputs**
-1. **Embedding Data**:
-   - Ensure that the data and metadata being embedded into ChromaDB match the JSON file.
+### **Query Process Update**
+To include the source in the query response, update the `process_query` function to return the raw response along with the source.
 
-2. **Raw Results from ChromaDB**:
-   - Ensure that the query retrieves relevant results from ChromaDB.
-
-3. **Extracted Metadata**:
-   - Ensure that the metadata extracted from the results matches the expected structure.
-
-4. **Data Passed to Summarization**:
-   - Ensure that the data passed to the LLM contains the expected fields (e.g., `CVE ID`, `SNYK ID`, `title`, `semver`).
-
-5. **Prompt Sent to LLM**:
-   - Ensure that the prompt sent to the LLM is well-formed and contains the relevant data.
-
----
-
-### **Next Steps**
-1. Run the program with the debug statements.
-2. Share the debug outputs for the following:
-   - Raw results from ChromaDB.
-   - Extracted metadata.
-   - Data passed to the LLM.
-   - Prompt sent to the LLM.
-3. Based on the outputs, we can identify where the issue lies (e.g., embedding, querying, or summarization).
-
-Let me know how it goes!
+####
