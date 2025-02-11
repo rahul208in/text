@@ -1,0 +1,72 @@
+To include credentials (e.g., API keys, tokens, or basic authentication) in your k6 load test script, you can add them to the request headers or parameters. Below is an updated version of the script that includes credentials.
+
+### Updated Script: `load-test.js`
+```javascript
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+// Test configuration
+export const options = {
+  stages: [
+    { duration: '30s', target: 20 }, // Ramp up to 20 users over 30 seconds
+    { duration: '1m', target: 20 }, // Stay at 20 users for 1 minute
+    { duration: '30s', target: 0 },  // Ramp down to 0 users over 30 seconds
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)<500'], // 95% of requests should complete within 500ms
+    http_req_failed: ['rate<0.01'],   // Less than 1% of requests should fail
+  },
+};
+
+// Test function
+export default function () {
+  const url = 'https://your-api-endpoint.com/api/resource'; // Replace with your API endpoint
+  const payload = JSON.stringify({ key: 'value' }); // Replace with your payload if needed
+
+  // Add credentials (e.g., API key, token, or basic auth)
+  const apiKey = 'your-api-key'; // Replace with your API key or token
+  const authToken = 'your-auth-token'; // Replace with your auth token if needed
+
+  const params = {
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`, // Use Bearer token for authentication
+      'X-API-Key': apiKey, // Use API key if required
+    },
+  };
+
+  const res = http.post(url, payload, params);
+
+  // Check if the response is successful
+  check(res, {
+    'status is 200': (r) => r.status === 200,
+    'response body is valid': (r) => r.json().hasOwnProperty('key'), // Replace with your validation logic
+  });
+
+  sleep(1); // Simulate user think time
+}
+```
+
+### How to Run
+1. Save the script as `load-test.js`.
+2. Run the script using k6:
+   ```bash
+   k6 run load-test.js
+   ```
+
+### Explanation of Changes
+- **Credentials**: Added `apiKey` and `authToken` variables to store your credentials.
+- **Headers**: Included `Authorization` and `X-API-Key` headers in the request to pass the credentials.
+  - Use `Bearer ${authToken}` for token-based authentication.
+  - Use `X-API-Key: ${apiKey}` for API key-based authentication.
+- **Basic Authentication**: If your API uses basic authentication, you can encode the credentials in Base64 and include them in the `Authorization` header like this:
+  ```javascript
+  const basicAuth = `Basic ${btoa('username:password')}`; // Replace with your username and password
+  params.headers['Authorization'] = basicAuth;
+  ```
+
+### Notes
+- Replace `your-api-key`, `your-auth-token`, and `https://your-api-endpoint.com/api/resource` with your actual credentials and API endpoint.
+- Ensure your credentials are secure and not hardcoded in production scripts. Use environment variables or k6 secrets for better security.
+
+Let me know if you need further assistance!
