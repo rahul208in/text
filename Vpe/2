@@ -1,72 +1,158 @@
-To include credentials (e.g., API keys, tokens, or basic authentication) in your k6 load test script, you can add them to the request headers or parameters. Below is an updated version of the script that includes credentials.
+Here’s the Node.js script to convert a JSON file into a detailed HTML report:
 
-### Updated Script: `load-test.js`
+### Node.js Script: `json2html_detail_report.js`
 ```javascript
-import http from 'k6/http';
-import { check, sleep } from 'k6';
+const fs = require('fs');
+const path = require('path');
 
-// Test configuration
-export const options = {
-  stages: [
-    { duration: '30s', target: 20 }, // Ramp up to 20 users over 30 seconds
-    { duration: '1m', target: 20 }, // Stay at 20 users for 1 minute
-    { duration: '30s', target: 0 },  // Ramp down to 0 users over 30 seconds
-  ],
-  thresholds: {
-    http_req_duration: ['p(95)<500'], // 95% of requests should complete within 500ms
-    http_req_failed: ['rate<0.01'],   // Less than 1% of requests should fail
-  },
-};
+// Function to generate HTML report
+function generateHTMLReport(jsonFilePath, outputFilePath) {
+  try {
+    // Read the JSON file
+    const jsonData = fs.readFileSync(jsonFilePath, 'utf8');
+    const metrics = {
+      http_reqs: { count: 0 },
+      http_req_duration: { avg: 0, p95: 0 },
+      http_req_failed: { rate: 0 },
+      responseTimes: [],
+    };
 
-// Test function
-export default function () {
-  const url = 'https://your-api-endpoint.com/api/resource'; // Replace with your API endpoint
-  const payload = JSON.stringify({ key: 'value' }); // Replace with your payload if needed
+    // Parse JSONL data
+    jsonData.split('\n').forEach((line) => {
+      if (line.trim()) {
+        const entry = JSON.parse(line);
+        if (entry.metric === 'http_reqs') {
+          metrics.http_reqs.count += 1;
+        } else if (entry.metric === 'http_req_duration') {
+          metrics.http_req_duration.avg = entry.data.value;
+        } else if (entry.metric === 'http_req_duration{quantile:0.95}') {
+          metrics.http_req_duration.p95 = entry.data.value;
+        } else if (entry.metric === 'http_req_failed') {
+          metrics.http_req_failed.rate = entry.data.value;
+        } else if (entry.metric === 'http_req_duration' && entry.data.value) {
+          metrics.responseTimes.push(entry.data.value);
+        }
+      }
+    });
 
-  // Add credentials (e.g., API key, token, or basic auth)
-  const apiKey = 'your-api-key'; // Replace with your API key or token
-  const authToken = 'your-auth-token'; // Replace with your auth token if needed
+    // Generate HTML content
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>k6 Load Test Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
+    th { background-color: #f4f4f4; }
+    .chart-container { margin-top: 40px; width: 80%; height: 400px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>k6 Load Test Report</h1>
+  <table>
+    <tr>
+      <th>Metric</th>
+      <th>Value</th>
+    </tr>
+    <tr>
+      <td>Total Requests</td>
+      <td>${metrics.http_reqs.count}</td>
+    </tr>
+    <tr>
+      <td>Average Response Time</td>
+      <td>${metrics.http_req_duration.avg.toFixed(2)} ms</td>
+    </tr>
+    <tr>
+      <td>95th Percentile Response Time</td>
+      <td>${metrics.http_req_duration.p95.toFixed(2)} ms</td>
+    </tr>
+    <tr>
+      <td>Error Rate</td>
+      <td>${(metrics.http_req_failed.rate * 100).toFixed(2)}%</td>
+    </tr>
+  </table>
 
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`, // Use Bearer token for authentication
-      'X-API-Key': apiKey, // Use API key if required
-    },
-  };
+  <div class="chart-container">
+    <canvas id="response-time-chart"></canvas>
+  </div>
 
-  const res = http.post(url, payload, params);
+  <script>
+    const ctx = document.getElementById('response-time-chart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ${JSON.stringify(metrics.responseTimes.map((_, i) => `Request ${i + 1}`))},
+        datasets: [{
+          label: 'Response Time (ms)',
+          data: ${JSON.stringify(metrics.responseTimes)},
+          borderColor: 'rgba(75, 192, 192, 1)',
+          fill: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Response Time (ms)',
+            },
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Request Number',
+            },
+          },
+        },
+      },
+    });
+  </script>
+</body>
+</html>
+`;
 
-  // Check if the response is successful
-  check(res, {
-    'status is 200': (r) => r.status === 200,
-    'response body is valid': (r) => r.json().hasOwnProperty('key'), // Replace with your validation logic
-  });
+    // Save the HTML report
+    fs.writeFileSync(outputFilePath, htmlContent);
+    console.log(`HTML report generated: ${outputFilePath}`);
+  } catch (error) {
+    console.error('Error generating report:', error);
+  }
+}
 
-  sleep(1); // Simulate user think time
+// Command-line usage
+if (process.argv.length < 4) {
+  console.log('Usage: node json2html_detail_report.js <input-json-file> <output-html-file>');
+} else {
+  const jsonFilePath = process.argv[2];
+  const outputFilePath = process.argv[3];
+  generateHTMLReport(jsonFilePath, outputFilePath);
 }
 ```
 
-### How to Run
-1. Save the script as `load-test.js`.
-2. Run the script using k6:
+---
+
+### How to Use
+1. Save the script as `json2html_detail_report.js`.
+2. Run the script with the input JSON file and output HTML file as arguments:
    ```bash
-   k6 run load-test.js
+   node json2html_detail_report.js test_results.json html-report.html
    ```
+3. Open the generated `html-report.html` file in a browser to view the report.
 
-### Explanation of Changes
-- **Credentials**: Added `apiKey` and `authToken` variables to store your credentials.
-- **Headers**: Included `Authorization` and `X-API-Key` headers in the request to pass the credentials.
-  - Use `Bearer ${authToken}` for token-based authentication.
-  - Use `X-API-Key: ${apiKey}` for API key-based authentication.
-- **Basic Authentication**: If your API uses basic authentication, you can encode the credentials in Base64 and include them in the `Authorization` header like this:
-  ```javascript
-  const basicAuth = `Basic ${btoa('username:password')}`; // Replace with your username and password
-  params.headers['Authorization'] = basicAuth;
-  ```
+---
 
-### Notes
-- Replace `your-api-key`, `your-auth-token`, and `https://your-api-endpoint.com/api/resource` with your actual credentials and API endpoint.
-- Ensure your credentials are secure and not hardcoded in production scripts. Use environment variables or k6 secrets for better security.
+### Features of the Script
+1. **Input JSON File**: Reads the k6 JSONL file (`test_results.json`).
+2. **Output HTML File**: Generates a detailed HTML report (`html-report.html`).
+3. **Metrics**: Displays total requests, average response time, 95th percentile response time, and error rate.
+4. **Chart**: Visualizes response times using Chart.js.
 
 Let me know if you need further assistance!
