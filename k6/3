@@ -1,0 +1,125 @@
+import { group } from 'k6';
+import http from 'k6/http';
+import { check } from 'k6';
+
+export let options = {
+  vus: 10, // Virtual Users
+  duration: '30s', // Test Duration
+};
+
+export default function () {
+  // Group 1: API Endpoint Tests
+  group('API Endpoint Tests', function () {
+    // Tagged request
+    let res = http.get('https://test-api.k6.io/public/crocodiles/', {
+      tags: { endpoint: 'crocodiles' },
+    });
+    check(res, {
+      'status is 200': (r) => r.status === 200,
+    });
+
+    // Another tagged request
+    res = http.get('https://test-api.k6.io/public/crocodiles/1/', {
+      tags: { endpoint: 'crocodile-details' },
+    });
+    check(res, {
+      'status is 200': (r) => r.status === 200,
+    });
+  });
+
+  // Group 2: Health Check Tests
+  group('Health Check Tests', function () {
+    // Tagged request
+    let res = http.get('https://test-api.k6.io/public/health/', {
+      tags: { endpoint: 'health' },
+    });
+    check(res, {
+      'status is 200': (r) => r.status === 200,
+    });
+  });
+}
+
+// Generate Custom HTML Report with Request Failed Rate
+export function handleSummary(data) {
+  // Extract metrics for each endpoint
+  const endpointMetrics = {};
+  for (const metric in data.metrics) {
+    if (metric.startsWith('http_reqs') && data.metrics[metric].tags.endpoint) {
+      const endpoint = data.metrics[metric].tags.endpoint;
+      if (!endpointMetrics[endpoint]) {
+        endpointMetrics[endpoint] = {
+          totalRequests: 0,
+          failedRequests: 0,
+        };
+      }
+      endpointMetrics[endpoint].totalRequests += data.metrics[metric].count;
+      if (data.metrics[metric].fails) {
+        endpointMetrics[endpoint].failedRequests += data.metrics[metric].fails;
+      }
+    }
+  }
+
+  // Calculate Request Failed Rate for each endpoint
+  const endpointFailedRates = {};
+  for (const endpoint in endpointMetrics) {
+    const { totalRequests, failedRequests } = endpointMetrics[endpoint];
+    endpointFailedRates[endpoint] = (failedRequests / totalRequests) * 100;
+  }
+
+  // Generate HTML Report
+  const report = `
+    <html>
+      <head>
+        <title>k6 Test Report</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+          }
+          h1, h2 {
+            color: #333;
+          }
+          ul {
+            list-style-type: none;
+            padding: 0;
+          }
+          li {
+            background: #f9f9f9;
+            margin: 5px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+          }
+          pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border: 1px solid #ccc;
+            overflow-x: auto;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>k6 Test Report</h1>
+        <h2>Groups</h2>
+        <ul>
+          <li>API Endpoint Tests</li>
+          <li>Health Check Tests</li>
+        </ul>
+        <h2>Request Failed Rate by Endpoint</h2>
+        <ul>
+          ${Object.entries(endpointFailedRates)
+            .map(
+              ([endpoint, rate]) =>
+                `<li><strong>${endpoint}</strong>: ${rate.toFixed(2)}%</li>`
+            )
+            .join('')}
+        </ul>
+        <h2>Metrics</h2>
+        <pre>${JSON.stringify(data, null, 2)}</pre>
+      </body>
+    </html>
+  `;
+
+  return {
+    "summary.html": report,
+  };
+}
