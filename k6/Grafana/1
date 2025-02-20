@@ -1,0 +1,45 @@
+[
+  {
+    $match: {
+      metric: "http_reqs"
+    }
+  },
+  {
+    $addFields: {
+      "adjustedTimeStr": {
+        $concat: [
+          { $substrCP: [ "$data.time", 0, 23 ] }, // Truncate to 3 decimal seconds
+          { $substrCP: [ "$data.time", 26, 6 ] }   // Extract timezone (e.g., "+08:00")
+        ]
+      }
+    }
+  },
+  {
+    $addFields: {
+      "time": {
+        $dateFromString: {
+          dateString: "$adjustedTimeStr",
+          format: "%Y-%m-%dT%H:%M:%S.%L%z"
+        }
+      }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      time: 1,
+      value: "$data.value",
+      // Promote tags to top-level fields
+      expected_response: "$tags.expected_response",
+      group: "$tags.group",
+      method: "$tags.method",
+      name: "$tags.name",
+      proto: "$tags.proto",
+      scenario: "$tags.scenario",
+      status: "$tags.status",
+      test_type: "$tags.test_type",
+      tls_version: "$tags.tls_version",
+      url: "$tags.url"
+    }
+  }
+]
