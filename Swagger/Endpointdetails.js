@@ -1,22 +1,28 @@
 
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-export default function EndpointDetails({ path, methods }) {
+export default function EndpointDetails({ swagger, path, methods }) {
   const [selectedMethod, setSelectedMethod] = useState(Object.keys(methods)[0]);
   const details = methods[selectedMethod];
-  const [url, setUrl] = useState(path);
+  const baseUrl = swagger.servers?.[0]?.url || "";
+  const [query, setQuery] = useState(
+    (details.parameters || [])
+      .filter(p => p.in === "query")
+      .map(p => ({ key: p.name, value: p.default || "" }))
+  );
   const [headers, setHeaders] = useState([{ key: "", value: "" }]);
-  const [query, setQuery] = useState([{ key: "", value: "" }]);
   const [body, setBody] = useState("");
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Build full URL with query params
+  // Build full URL with base, path, and query params
   const buildUrl = () => {
-    const params = query.filter(q => q.key).map(q => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`).join("&");
-    return params ? `${url}?${params}` : url;
+    const params = query.filter(q => q.key && q.value !== undefined && q.value !== "")
+      .map(q => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`)
+      .join("&");
+    return params ? `${baseUrl}${path}?${params}` : `${baseUrl}${path}`;
   };
 
   // Send API request
@@ -52,6 +58,15 @@ export default function EndpointDetails({ path, methods }) {
   // Add new header/query row
   const addRow = (arr, setArr) => setArr([...arr, { key: "", value: "" }]);
 
+  // Update query params if method changes
+  useEffect(() => {
+    setQuery(
+      (methods[selectedMethod].parameters || [])
+        .filter(p => p.in === "query")
+        .map(p => ({ key: p.name, value: p.default || "" }))
+    );
+  }, [selectedMethod, methods]);
+
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
@@ -62,8 +77,8 @@ export default function EndpointDetails({ path, methods }) {
         </select>
         <input
           style={{ width: "60%", marginLeft: 8 }}
-          value={url}
-          onChange={e => setUrl(e.target.value)}
+          value={buildUrl()}
+          readOnly
         />
         <button onClick={sendRequest} disabled={loading} style={{ marginLeft: 8 }}>
           {loading ? "Sending..." : "Send"}
@@ -98,8 +113,8 @@ export default function EndpointDetails({ path, methods }) {
             <input
               placeholder="Key"
               value={q.key}
-              onChange={e => updatePair(query, setQuery, i, "key", e.target.value)}
-              style={{ width: 120, marginRight: 8 }}
+              readOnly
+              style={{ width: 120, marginRight: 8, background: "#f0f0f0" }}
             />
             <input
               placeholder="Value"
