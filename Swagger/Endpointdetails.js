@@ -4,27 +4,28 @@
 import { useState, useEffect } from "react";
 
 export default function EndpointDetails({ swagger, path, methods }) {
-  // Validation: check for required swagger fields
-  if (!swagger) return <div>No Swagger file loaded.</div>;
-  if (!swagger.servers || !swagger.servers[0]?.url) return <div>Swagger file missing 'servers' or 'servers[0].url'.</div>;
-  if (!swagger.paths || !swagger.paths[path]) return <div>Swagger file missing 'paths' or selected path.</div>;
-  if (!methods) return <div>No methods found for this endpoint.</div>;
+  // Defensive: Only render if everything is present
+  if (!swagger || !swagger.servers || !swagger.paths || !methods) {
+    return <div>No Swagger file loaded or endpoint not found.</div>;
+  }
 
   const [selectedMethod, setSelectedMethod] = useState(Object.keys(methods)[0]);
   const details = methods[selectedMethod] || {};
   const baseUrl = swagger.servers[0].url;
 
   // Extract query parameters and auto-fill with example/default
-  const getInitialQuery = () => (
+  const getInitialQuery = () =>
     (details.parameters || [])
       .filter(p => p.in === "query")
       .map(p => ({
         key: p.name,
-        value: p.example !== undefined ? p.example : (p.default !== undefined ? p.default : ""),
+        value: p.example !== undefined
+          ? p.example
+          : (p.schema?.default !== undefined ? p.schema.default : ""),
         description: p.description || "",
         required: p.required || false
-      }))
-  );
+      }));
+
   const [query, setQuery] = useState(getInitialQuery);
 
   // Update query params if method changes
