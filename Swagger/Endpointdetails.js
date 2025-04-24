@@ -4,36 +4,54 @@
 import { useState, useEffect } from "react";
 
 export default function EndpointDetails({ swagger, path, methods }) {
+  // Validation: check for required swagger fields
+  if (!swagger) return <div>No Swagger file loaded.</div>;
+  if (!swagger.servers || !swagger.servers[0]?.url) return <div>Swagger file missing 'servers' or 'servers[0].url'.</div>;
+  if (!swagger.paths || !swagger.paths[path]) return <div>Swagger file missing 'paths' or selected path.</div>;
+  if (!methods) return <div>No methods found for this endpoint.</div>;
+
   const [selectedMethod, setSelectedMethod] = useState(Object.keys(methods)[0]);
-  const details = methods[selectedMethod];
-  const baseUrl = swagger.servers?.[0]?.url || "";
-  const [query, setQuery] = useState(
+  const details = methods[selectedMethod] || {};
+  const baseUrl = swagger.servers[0].url;
+
+  // Extract query parameters and auto-fill with example/default
+  const getInitialQuery = () => (
     (details.parameters || [])
       .filter(p => p.in === "query")
-      .map(p => ({ key: p.name, value: p.default || "" }))
+      .map(p => ({
+        key: p.name,
+        value: p.example !== undefined ? p.example : (p.default !== undefined ? p.default : ""),
+        description: p.description || "",
+        required: p.required || false
+      }))
   );
-  const [headers, setHeaders] = useState([{ key: "", value: "" }]);
-  const [body, setBody] = useState("");
-  const [response, setResponse] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState(getInitialQuery);
+
+  // Update query params if method changes
+  useEffect(() => {
+    setQuery(getInitialQuery());
+    // eslint-disable-next-line
+  }, [selectedMethod]);
 
   // Build full URL with base, path, and query params
   const buildUrl = () => {
-    const params = query.filter(q => q.key && q.value !== undefined && q.value !== "")
+    const params = query
+      .filter(q => q.key && q.value !== undefined && q.value !== "")
       .map(q => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`)
       .join("&");
     return params ? `${baseUrl}${path}?${params}` : `${baseUrl}${path}`;
   };
 
   // Send API request
+  const [response, setResponse] = useState(null);
+  const [loading, setLoading] = useState(false);
+
   const sendRequest = async () => {
     setLoading(true);
     setResponse(null);
     try {
       const res = await fetch(buildUrl(), {
         method: selectedMethod.toUpperCase(),
-        headers: headers.filter(h => h.key).reduce((acc, h) => ({ ...acc, [h.key]: h.value }), {}),
-        body: ["post", "put", "patch"].includes(selectedMethod) && body ? body : undefined,
       });
       const text = await res.text();
       setResponse({
@@ -48,24 +66,14 @@ export default function EndpointDetails({ swagger, path, methods }) {
     setLoading(false);
   };
 
-  // Helper to update key-value pairs
-  const updatePair = (arr, setArr, idx, field, value) => {
-    const copy = [...arr];
-    copy[idx][field] = value;
-    setArr(copy);
+  // Helper to update query value
+  const updateQueryValue = (idx, value) => {
+    setQuery(qs => {
+      const copy = [...qs];
+      copy[idx].value = value;
+      return copy;
+    });
   };
-
-  // Add new header/query row
-  const addRow = (arr, setArr) => setArr([...arr, { key: "", value: "" }]);
-
-  // Update query params if method changes
-  useEffect(() => {
-    setQuery(
-      (methods[selectedMethod].parameters || [])
-        .filter(p => p.in === "query")
-        .map(p => ({ key: p.name, value: p.default || "" }))
-    );
-  }, [selectedMethod, methods]);
 
   return (
     <div>
@@ -85,60 +93,24 @@ export default function EndpointDetails({ swagger, path, methods }) {
         </button>
       </div>
 
-      <div>
-        <h4>Headers</h4>
-        {headers.map((h, i) => (
-          <div key={i}>
-            <input
-              placeholder="Key"
-              value={h.key}
-              onChange={e => updatePair(headers, setHeaders, i, "key", e.target.value)}
-              style={{ width: 120, marginRight: 8 }}
-            />
-            <input
-              placeholder="Value"
-              value={h.value}
-              onChange={e => updatePair(headers, setHeaders, i, "value", e.target.value)}
-              style={{ width: 200 }}
-            />
-          </div>
-        ))}
-        <button onClick={() => addRow(headers, setHeaders)} style={{ marginTop: 4 }}>+ Add Header</button>
-      </div>
-
       <div style={{ marginTop: 16 }}>
         <h4>Query Parameters</h4>
+        {query.length === 0 && <div>No query parameters.</div>}
         {query.map((q, i) => (
-          <div key={i}>
+          <div key={i} style={{ marginBottom: 8 }}>
+            <label>
+              <b>{q.key}</b>
+              {q.required && <span style={{ color: "red" }}> *</span>}
+              {q.description && <span style={{ color: "#888", marginLeft: 8 }}>{q.description}</span>}
+            </label>
             <input
-              placeholder="Key"
-              value={q.key}
-              readOnly
-              style={{ width: 120, marginRight: 8, background: "#f0f0f0" }}
-            />
-            <input
-              placeholder="Value"
+              style={{ width: 200, marginLeft: 8 }}
               value={q.value}
-              onChange={e => updatePair(query, setQuery, i, "value", e.target.value)}
-              style={{ width: 200 }}
+              onChange={e => updateQueryValue(i, e.target.value)}
             />
           </div>
         ))}
-        <button onClick={() => addRow(query, setQuery)} style={{ marginTop: 4 }}>+ Add Query Param</button>
       </div>
-
-      {["post", "put", "patch"].includes(selectedMethod) && (
-        <div style={{ marginTop: 16 }}>
-          <h4>Body</h4>
-          <textarea
-            rows={6}
-            style={{ width: "100%" }}
-            value={body}
-            onChange={e => setBody(e.target.value)}
-            placeholder='{"key":"value"}'
-          />
-        </div>
-      )}
 
       <div style={{ marginTop: 24 }}>
         <h4>Response</h4>
