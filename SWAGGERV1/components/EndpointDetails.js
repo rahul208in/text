@@ -97,7 +97,7 @@ const EndpointDetails = ({
           missing.push({
             name: param.name,
             type: 'header',
-            file: `${operationId}_${getLastPathSegment(path)}_headers.yaml`
+            file: `${operationId}_${getLastPathSegment(path)}_header.yaml`
           });
         }
       });
@@ -219,7 +219,7 @@ const EndpointDetails = ({
           missing.push({
             name: param.name,
             type: 'header',
-            file: `${operationId}_${getLastPathSegment(path)}_headers.yaml`
+            file: `${operationId}_${getLastPathSegment(path)}_header.yaml`
           });
         }
       });
@@ -566,7 +566,7 @@ headers:
           <div className="space-y-3">
             {details.parameters.filter(p => p.in === 'header').map(param => {
               // Check if we have a value from headers file
-              const headersFileName = `${operationId}_${lastPathSegment}_headers.yaml`;
+              const headersFileName = `${operationId}_${lastPathSegment}_header.yaml`;
               const hasFileValue = paramFiles.headers && 
                 paramFiles.headers.headers && 
                 paramFiles.headers.headers.header;
@@ -633,13 +633,13 @@ headers:
                     <p className="text-xs text-blue-600">
                       {fileFound 
                         ? `Value loaded from: ${fileFound}`
-                        : `Expected in file: ${operationId}_${lastPathSegment}_headers.yaml`
+                        : `Expected in file: ${operationId}_${lastPathSegment}_header.yaml`
                       }
                     </p>
                     <button 
                       className="ml-2 text-xs text-blue-600 hover:text-blue-800 underline"
                       onClick={() => {
-                        const file = uploadedFolder.files.find(f => f.name === (fileFound || `${operationId}_${lastPathSegment}_headers.yaml`));
+                        const file = uploadedFolder.files.find(f => f.name === (fileFound || `${operationId}_${lastPathSegment}_header.yaml`));
                         if (file) {
                           viewFileContent(file);
                         } else {
@@ -647,7 +647,7 @@ headers:
                           const headerParams = details.parameters.filter(p => p.in === 'header');
                           const templateContent = createHeaderFileTemplate(headerParams);
                           
-                          alert(`File ${operationId}_${lastPathSegment}_headers.yaml not found. You can create it with the following content:\n\n${templateContent}`);
+                          alert(`File ${operationId}_${lastPathSegment}_header.yaml not found. You can create it with the following content:\n\n${templateContent}`);
                         }
                       }}
                     >
