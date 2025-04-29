@@ -124,67 +124,87 @@ const APIExplorer = () => {
   };
 
   // Process parameter files
-  const processParameterFiles = async (files) => {
-    const paramFiles = {};
-    
-    for (const file of files) {
-      try {
-        if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
-          // Parse YAML files
-          if (file.name.includes('_path.yaml')) {
+const processParameterFiles = async (files) => {
+  const paramFiles = {};
+  
+  for (const file of files) {
+    try {
+      if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
+        // Parse YAML files
+        if (file.name.includes('_path.yaml')) {
+          try {
+            const yamlContent = yaml.load(file.content);
+            paramFiles[file.name] = yamlContent;
+          } catch (e) {
+            // Fallback to regex parsing if YAML parsing fails
             try {
-              const yamlContent = yaml.load(file.content);
-              paramFiles[file.name] = yamlContent;
-            } catch (e) {
-              // Fallback to regex parsing if YAML parsing fails
-              const match = file.content.match(/name:\s*"([^"]+)"\s*\n\s*value:\s*"([^"]*)"/);
-              if (match) {
-                paramFiles[file.name] = {
-                  parameters: {
-                    parameter: {
-                      name: match[1],
-                      value: match[2]
-                    }
-                  }
-                };
-              }
-            }
-          } else if (file.name.includes('_headers.yaml')) {
-            try {
-              const yamlContent = yaml.load(file.content);
-              paramFiles[file.name] = yamlContent;
-            } catch (e) {
-              // Fallback to regex parsing if YAML parsing fails
-              const headerMatches = [...file.content.matchAll(/- name:\s*"([^"]+)"\s*\n\s*value:\s*"([^"]*)"/g)];
-              if (headerMatches.length > 0) {
-                const headers = headerMatches.map(match => ({
+              // Try array format first
+              const arrayMatches = [...file.content.matchAll(/- name:\s*"([^"]+)"\s*\n\s*value:\s*"([^"]*)"/g)];
+              if (arrayMatches.length > 0) {
+                const params = arrayMatches.map(match => ({
                   name: match[1],
                   value: match[2]
                 }));
                 
                 paramFiles[file.name] = {
-                  headers: {
-                    header: headers
+                  parameters: {
+                    parameter: params
                   }
                 };
+              } else {
+                // Try single parameter format
+                const match = file.content.match(/name:\s*"([^"]+)"\s*\n\s*value:\s*"([^"]*)"/);
+                if (match) {
+                  paramFiles[file.name] = {
+                    parameters: {
+                      parameter: {
+                        name: match[1],
+                        value: match[2]
+                      }
+                    }
+                  };
+                }
               }
+            } catch (regexError) {
+              console.warn(`Failed to parse path YAML file ${file.name} with regex:`, regexError);
             }
           }
-        } else if (file.name.endsWith('.json')) {
+        } else if (file.name.includes('_headers.yaml')) {
           try {
-            // Parse JSON files (like schema files)
-            paramFiles[file.name] = JSON.parse(file.content);
+            const yamlContent = yaml.load(file.content);
+            paramFiles[file.name] = yamlContent;
           } catch (e) {
-            console.warn(`Failed to parse JSON file ${file.name}:`, e);
+            // Fallback to regex parsing if YAML parsing fails
+            const headerMatches = [...file.content.matchAll(/- name:\s*"([^"]+)"\s*\n\s*value:\s*"([^"]*)"/g)];
+            if (headerMatches.length > 0) {
+              const headers = headerMatches.map(match => ({
+                name: match[1],
+                value: match[2]
+              }));
+              
+              paramFiles[file.name] = {
+                headers: {
+                  header: headers
+                }
+              };
+            }
           }
         }
-      } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
+      } else if (file.name.endsWith('.json')) {
+        try {
+          // Parse JSON files (like schema files)
+          paramFiles[file.name] = JSON.parse(file.content);
+        } catch (e) {
+          console.warn(`Failed to parse JSON file ${file.name}:`, e);
+        }
       }
+    } catch (error) {
+      console.error(`Error processing file ${file.name}:`, error);
     }
-    
-    setParameterFiles(paramFiles);
-  };
+  }
+  
+  setParameterFiles(paramFiles);
+};
 
   // Helper function to read file content
   const readFileContent = (file) => {
@@ -196,32 +216,32 @@ const APIExplorer = () => {
     });
   };
 
-  // Helper function to find parameter files for an endpoint
-  const findParameterFiles = (operationId, path) => {
-    // Extract the last segment of the path for the filename
-    const pathSegments = path.replace(/^\//, '').split('/');
-    const lastPathSegment = pathSegments[pathSegments.length - 1];
-    
-    const result = {
-      path: null,
-      headers: null,
-      body: null
-    };
-    
-    // Check for path/query parameter file using the last path segment
-    const pathFileName = `${operationId}_${lastPathSegment}_path.yaml`;
-    if (parameterFiles[pathFileName]) {
-      result.path = parameterFiles[pathFileName];
-    }
-    
-    // Check for header parameter file using the last path segment
-    const headersFileName = `${operationId}_${lastPathSegment}_headers.yaml`;
-    if (parameterFiles[headersFileName]) {
-      result.headers = parameterFiles[headersFileName];
-    }
-    
-    return result;
+ // Helper function to find parameter files for an endpoint
+const findParameterFiles = (operationId, path) => {
+  // Extract the last segment of the path for the filename
+  const pathSegments = path.replace(/^\//, '').split('/');
+  const lastPathSegment = pathSegments[pathSegments.length - 1];
+  
+  const result = {
+    path: null,
+    headers: null,
+    body: null
   };
+  
+  // Check for path/query parameter file using the last path segment
+  const pathFileName = `${operationId}_${lastPathSegment}_path.yaml`;
+  if (parameterFiles[pathFileName]) {
+    result.path = parameterFiles[pathFileName];
+  }
+  
+  // Check for header parameter file using the last path segment
+  const headersFileName = `${operationId}_${lastPathSegment}_headers.yaml`;
+  if (parameterFiles[headersFileName]) {
+    result.headers = parameterFiles[headersFileName];
+  }
+  
+  return result;
+};
 
   // Helper function to find schema reference files
   const findSchemaFile = (schemaRef) => {
