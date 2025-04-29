@@ -41,9 +41,16 @@ const EndpointDetails = ({
         let paramValue = '';
         
         if (paramFiles.path && paramFiles.path.parameters && paramFiles.path.parameters.parameter) {
-          const fileParam = paramFiles.path.parameters.parameter;
-          if (fileParam.name === param.name) {
-            paramValue = fileParam.value || '';
+          const fileParams = paramFiles.path.parameters.parameter;
+          
+          // Handle both array and single object formats
+          if (Array.isArray(fileParams)) {
+            const matchingParam = fileParams.find(p => p.name === param.name);
+            if (matchingParam) {
+              paramValue = matchingParam.value || '';
+            }
+          } else if (fileParams.name === param.name) {
+            paramValue = fileParams.value || '';
           }
         }
         
@@ -71,12 +78,15 @@ const EndpointDetails = ({
         
         if (paramFiles.headers && paramFiles.headers.headers && paramFiles.headers.headers.header) {
           const headers = paramFiles.headers.headers.header;
-          const foundHeader = Array.isArray(headers) 
-            ? headers.find(h => h.name === param.name)
-            : (headers.name === param.name ? headers : null);
-            
-          if (foundHeader) {
-            headerValue = foundHeader.value || '';
+          
+          // Handle both array and single object formats
+          if (Array.isArray(headers)) {
+            const matchingHeader = headers.find(h => h.name === param.name);
+            if (matchingHeader) {
+              headerValue = matchingHeader.value || '';
+            }
+          } else if (headers.name === param.name) {
+            headerValue = headers.value || '';
           }
         }
         
@@ -358,6 +368,45 @@ const EndpointDetails = ({
       schemaFile = findSchemaFile(schema.items.$ref);
     }
   }
+
+  // Helper function to create file template
+  const createPathFileTemplate = (paramName, paramValue) => {
+    return `---
+parameters:
+  parameter:
+    name: "${paramName}"
+    value: "${paramValue || ''}"`;
+  };
+
+  // Helper function to create multi-parameter file template
+  const createMultiParamFileTemplate = (params) => {
+    let template = `---
+parameters:
+  parameter:`;
+    
+    params.forEach(param => {
+      template += `
+    - name: "${param.name}"
+      value: "${param.example || ''}"`;
+    });
+    
+    return template;
+  };
+
+  // Helper function to create header file template
+  const createHeaderFileTemplate = (headerParams) => {
+    let template = `---
+headers:
+  header:`;
+    
+    headerParams.forEach(param => {
+      template += `
+  - name: "${param.name}"
+    value: "${param.example || ''}"`;
+    });
+    
+    return template;
+  };
   
   return (
     <div className="endpoint-details">
@@ -412,11 +461,27 @@ const EndpointDetails = ({
               const pathFileName = `${operationId}_${lastPathSegment}_path.yaml`;
               const hasFileValue = paramFiles.path && 
                 paramFiles.path.parameters && 
-                paramFiles.path.parameters.parameter && 
-                paramFiles.path.parameters.parameter.name === param.name;
+                paramFiles.path.parameters.parameter;
               
-              const fileValue = hasFileValue ? paramFiles.path.parameters.parameter.value : '';
-              const fileFound = hasFileValue ? pathFileName : '';
+              let fileValue = '';
+              let fileFound = '';
+              
+              if (hasFileValue) {
+                const fileParams = paramFiles.path.parameters.parameter;
+                
+                // Handle both array and single object formats
+                if (Array.isArray(fileParams)) {
+                  const matchingParam = fileParams.find(p => p.name === param.name);
+                  if (matchingParam) {
+                    fileValue = matchingParam.value || '';
+                    fileFound = pathFileName;
+                  }
+                } else if (fileParams.name === param.name) {
+                  fileValue = fileParams.value || '';
+                  fileFound = pathFileName;
+                }
+              }
+              
               const isEmpty = !parameters[param.name];
               
               return (
@@ -470,14 +535,17 @@ const EndpointDetails = ({
                         if (file) {
                           viewFileContent(file);
                         } else {
-                          // Create file template
-                          const yamlTemplate = `---
-parameters:
-  parameter:
-    name: "${param.name}"
-    value: "${param.example || ''}"`;
+                          // Create file template - check if we should create single or multi-parameter file
+                          const queryParams = details.parameters.filter(p => p.in === 'query');
+                          let templateContent;
                           
-                          alert(`File ${operationId}_${lastPathSegment}_path.yaml not found. You can create it with the following content:\n\n${yamlTemplate}`);
+                          if (queryParams.length > 1) {
+                            templateContent = createMultiParamFileTemplate(queryParams);
+                          } else {
+                            templateContent = createPathFileTemplate(param.name, param.example);
+                          }
+                          
+                          alert(`File ${operationId}_${lastPathSegment}_path.yaml not found. You can create it with the following content:\n\n${templateContent}`);
                         }
                       }}
                     >
@@ -507,12 +575,17 @@ parameters:
               let fileFound = '';
               
               if (hasFileValue) {
-                const headerEntry = Array.isArray(paramFiles.headers.headers.header) 
-                  ? paramFiles.headers.headers.header.find(h => h.name === param.name)
-                  : (paramFiles.headers.headers.header.name === param.name ? paramFiles.headers.headers.header : null);
+                const headers = paramFiles.headers.headers.header;
                 
-                if (headerEntry) {
-                  fileValue = headerEntry.value || '';
+                // Handle both array and single object formats
+                if (Array.isArray(headers)) {
+                  const matchingHeader = headers.find(h => h.name === param.name);
+                  if (matchingHeader) {
+                    fileValue = matchingHeader.value || '';
+                    fileFound = headersFileName;
+                  }
+                } else if (headers.name === param.name) {
+                  fileValue = headers.value || '';
                   fileFound = headersFileName;
                 }
               }
@@ -571,13 +644,10 @@ parameters:
                           viewFileContent(file);
                         } else {
                           // Create header file template
-                          const yamlTemplate = `---
-headers:
-  header:
-  - name: "${param.name}"
-    value: "${param.example || ''}"`;
+                          const headerParams = details.parameters.filter(p => p.in === 'header');
+                          const templateContent = createHeaderFileTemplate(headerParams);
                           
-                          alert(`File ${operationId}_${lastPathSegment}_headers.yaml not found. You can create it with the following content:\n\n${yamlTemplate}`);
+                          alert(`File ${operationId}_${lastPathSegment}_headers.yaml not found. You can create it with the following content:\n\n${templateContent}`);
                         }
                       }}
                     >
