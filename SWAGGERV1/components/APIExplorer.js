@@ -169,7 +169,7 @@ const processParameterFiles = async (files) => {
               console.warn(`Failed to parse path YAML file ${file.name} with regex:`, regexError);
             }
           }
-        } else if (file.name.includes('_headers.yaml')) {
+        } else if (file.name.includes('_header.yaml')) {
           try {
             const yamlContent = yaml.load(file.content);
             paramFiles[file.name] = yamlContent;
@@ -235,7 +235,7 @@ const findParameterFiles = (operationId, path) => {
   }
   
   // Check for header parameter file using the last path segment
-  const headersFileName = `${operationId}_${lastPathSegment}_headers.yaml`;
+  const headersFileName = `${operationId}_${lastPathSegment}_header.yaml`;
   if (parameterFiles[headersFileName]) {
     result.headers = parameterFiles[headersFileName];
   }
@@ -320,7 +320,7 @@ const findParameterFiles = (operationId, path) => {
                 }
               }));
             }
-          } else if (fileName.includes('_headers.yaml')) {
+          } else if (fileName.includes('_header.yaml')) {
             const headerMatches = [...editedContent.matchAll(/- name:\s*"([^"]+)"\s*\n\s*value:\s*"([^"]*)"/g)];
             if (headerMatches.length > 0) {
               const headers = headerMatches.map(match => ({
