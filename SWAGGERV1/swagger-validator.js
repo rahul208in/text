@@ -124,6 +124,88 @@ async function findSwaggerFile(dirPath, files) {
   return null;
 }
 
+
+/**
+ * Parse YAML content for parameter structures
+ * This parser handles common YAML formats for query and header parameters
+ */
+function parseYamlManually(content) {
+    try {
+    //   // Debug the raw content first
+    //   console.log('    Raw YAML content:');
+    //   console.log(`    ${content.split('\n').join('\n    ')}`);
+      
+      const result = {};
+      
+      // Remove YAML document separator if present
+      content = content.replace(/^---[\r\n]+/, '');
+      
+      // Case 1: Headers format with array items
+      if (content.includes('headers:') && content.includes('header:')) {
+        // Extract header items with dash prefix
+        const headerItemsRegex = /-\s*name:\s*["']?([^"'\r\n]+)["']?[\r\n\s]*value:\s*["']?([^"'\r\n]*)["']?/g;
+        const headerMatches = [...content.matchAll(headerItemsRegex)];
+        
+        if (headerMatches.length > 0) {
+          for (const match of headerMatches) {
+            const name = match[1].trim();
+            const value = match[2] ? match[2].trim() : '';
+            result[name] = value;
+            console.log(`    Found header parameter: ${name} = ${value || '(empty)'}`);
+          }
+          return result;
+        }
+      }
+      
+      // Case 2: Parameters format with single parameter
+      if (content.includes('parameters:') && content.includes('parameter:')) {
+        // Check if it's a single parameter format
+        const singleParamRegex = /parameters:[\r\n\s]*parameter:[\r\n\s]*name:\s*["']?([^"'\r\n]+)["']?[\r\n\s]*value:\s*["']?([^"'\r\n]*)["']?/;
+        const singleParamMatch = content.match(singleParamRegex);
+        
+        if (singleParamMatch) {
+          const name = singleParamMatch[1].trim();
+          const value = singleParamMatch[2] ? singleParamMatch[2].trim() : '';
+          result[name] = value;
+          console.log(`    Found single parameter: ${name} = ${value || '(empty)'}`);
+          return result;
+        }
+        
+        // Check if it's a multiple parameters format (with dashes)
+        const multiParamRegex = /-\s*name:\s*["']?([^"'\r\n]+)["']?[\r\n\s]*value:\s*["']?([^"'\r\n]*)["']?/g;
+        const multiParamMatches = [...content.matchAll(multiParamRegex)];
+        
+        if (multiParamMatches.length > 0) {
+          for (const match of multiParamMatches) {
+            const name = match[1].trim();
+            const value = match[2] ? match[2].trim() : '';
+            result[name] = value;
+            console.log(`    Found parameter: ${name} = ${value || '(empty)'}`);
+          }
+          return result;
+        }
+      }
+      
+      // Fallback to the original approach - just parse colon-separated values
+      const lines = content.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+      
+      for (const line of lines) {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > 0) {
+          const key = line.substring(0, colonIndex).trim();
+          const value = line.substring(colonIndex + 1).trim().replace(/^["']|["']$/g, '');
+          result[key] = value;
+          console.log(`    Found direct parameter: ${key} = ${value || '(empty)'}`);
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      console.log('Error in YAML parsing:', error.message);
+      return {};
+    }
+  }
+
 /**
  * Validate the Swagger file and related supporting files
  */
@@ -184,6 +266,7 @@ async function validateParameters(parameters, operationId, endpoint, fitnessPath
   // Process query parameters
   if (queryParams.length > 0) {
     console.log(`  - Query parameters: ${queryParams.map(p => p.name).join(', ')}`);
+    validationReport.endpoints[operationId].queryParams = queryParams.map(p => p.name);
     
     // Extract just the last part of the path (after the last forward slash)
     const endpointLastPart = endpoint.split('/').filter(Boolean).pop();
@@ -194,6 +277,7 @@ async function validateParameters(parameters, operationId, endpoint, fitnessPath
   // Process header parameters
   if (headerParams.length > 0) {
     console.log(`  - Header parameters: ${headerParams.map(p => p.name).join(', ')}`);
+    validationReport.endpoints[operationId].headerParams = headerParams.map(p => p.name);
     
     // Extract just the last part of the path (after the last forward slash)
     const endpointLastPart = endpoint.split('/').filter(Boolean).pop();
@@ -207,6 +291,7 @@ async function validateParameters(parameters, operationId, endpoint, fitnessPath
  */
 async function validateParameterFile(fileName, params, paramType, operationId, fitnessPath) {
   const filePath = path.join(fitnessPath, fileName);
+  const paramNames = params.map(p => p.name);
   
   try {
     await stat(filePath);
@@ -222,9 +307,56 @@ async function validateParameterFile(fileName, params, paramType, operationId, f
         type: paramType,
         operationId: operationId
       });
-    } else {
-      // Here you could add more validation for the parameter values if needed
-      console.log(`    ${paramType} parameter file has content`);
+      return;
+    }
+    
+    console.log(`    ${paramType} parameter file has content`);
+    
+    // For header and query parameters, always assume YAML format
+    if (paramType === 'header' || paramType === 'query') {
+      // Parse YAML content directly using our manual parser
+      const paramValues = parseYamlManually(content);
+      
+      if (Object.keys(paramValues).length === 0) {
+        console.log(`    Warning: Unable to parse content of ${fileName} or no parameters found`);
+        validationReport.emptyValues.push({
+          file: fileName,
+          type: paramType,
+          operationId: operationId,
+          issue: "Cannot parse content or no parameters found"
+        });
+        return;
+      }
+      
+      // Validate that expected parameters exist in the parameter file
+      const missingParams = [];
+      const emptyParams = [];
+      
+      for (const paramName of paramNames) {
+        if (!(paramName in paramValues)) {
+          missingParams.push(paramName);
+        } else if (paramValues[paramName] === "" || paramValues[paramName] === null) {
+          emptyParams.push(paramName);
+        } else {
+          console.log(`    ✓ Parameter '${paramName}' is present and has value: ${paramValues[paramName]}`);
+        }
+      }
+      
+      if (missingParams.length > 0) {
+        console.log(`    Warning: Parameters missing in ${fileName}: ${missingParams.join(', ')}`);
+        validationReport.endpoints[operationId].issues.push({
+          file: fileName,
+          missingParameters: missingParams
+        });
+      }
+      
+      if (emptyParams.length > 0) {
+        console.log(`    Warning: Empty parameters in ${fileName}: ${emptyParams.join(', ')}`);
+        validationReport.endpoints[operationId].issues.push({
+          file: fileName,
+          emptyParameters: emptyParams
+        });
+      }
     }
     
   } catch (err) {
@@ -293,9 +425,13 @@ async function validateSchemaRef(refPath, operationId, swagger, fitnessPath) {
           type: 'body',
           operationId: operationId
         });
-      } else {
-        console.log(`    Schema file has content`);
+        return;
       }
+      
+      console.log(`    ✓ Schema file has content - validated successfully`);
+      
+      // For body files, just check that there's content without validating format
+      // No need to check if it's valid JSON
       
     } catch (err) {
       console.log(`    Warning: Schema file ${schemaFileName} not found`);
@@ -341,12 +477,45 @@ function generateReport() {
   console.log('\n■ Endpoints validated:');
   Object.entries(validationReport.endpoints).forEach(([operationId, details]) => {
     console.log(`  - ${operationId} (${details.method.toUpperCase()} ${details.path})`);
+    
+    // List validated query parameters if any
+    if (details.queryParams && details.queryParams.length > 0) {
+      console.log(`    Query parameters: ${details.queryParams.join(', ')}`);
+    }
+    
+    // List validated header parameters if any
+    if (details.headerParams && details.headerParams.length > 0) {
+      console.log(`    Header parameters: ${details.headerParams.join(', ')}`);
+    }
+    
+    // Report issues with parameters
+    if (details.issues && details.issues.length > 0) {
+      console.log(`    Issues found:`);
+      details.issues.forEach(issue => {
+        if (issue.missingParameters) {
+          console.log(`      * File ${issue.file} is missing parameters: ${issue.missingParameters.join(', ')}`);
+        }
+        if (issue.emptyParameters) {
+          console.log(`      * File ${issue.file} has empty parameters: ${issue.emptyParameters.join(', ')}`);
+        }
+        if (issue.missingRequiredProperties) {
+          console.log(`      * File ${issue.file} is missing required properties: ${issue.missingRequiredProperties.join(', ')}`);
+        }
+        if (issue.typeValidationErrors) {
+          console.log(`      * File ${issue.file} has type validation errors: ${issue.typeValidationErrors.join(', ')}`);
+        }
+        if (issue.issue) {
+          console.log(`      * File ${issue.file}: ${issue.issue}`);
+        }
+      });
+    }
   });
   
   // Final validation status
   const hasIssues = validationReport.missingServerUrl || 
                     validationReport.missingFiles.length > 0 || 
-                    validationReport.emptyValues.length > 0;
+                    validationReport.emptyValues.length > 0 ||
+                    Object.values(validationReport.endpoints).some(endpoint => endpoint.issues && endpoint.issues.length > 0);
   
   console.log('\n====================================');
   if (hasIssues) {
