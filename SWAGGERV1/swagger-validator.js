@@ -373,26 +373,164 @@ async function validateParameterFile(fileName, params, paramType, operationId, f
  * Validate request body
  */
 async function validateRequestBody(requestBody, operationId, endpoint, swagger, fitnessPath) {
-  if (!requestBody.content || !requestBody.content['application/json']) {
-    return;
+    if (!requestBody.content) {
+      return;
+    }
+    
+    // Case 1: JSON content type with schema reference
+    if (requestBody.content['application/json']) {
+      console.log('  - Request body: application/json');
+      
+      const schema = requestBody.content['application/json'].schema;
+      if (!schema) return;
+      
+      // Handle array items with $ref
+      if (schema.type === 'array' && schema.items && schema.items.$ref) {
+        const refPath = schema.items.$ref;
+        const schemaName = refPath.split('/').pop();
+        
+        console.log(`    Referenced schema: ${schemaName}`);
+        const schemaFileName = `${schemaName}.json`;
+        await validateBodyFile(schemaFileName, operationId, fitnessPath);
+      } 
+      // Handle direct $ref to a schema
+      else if (schema.$ref) {
+        const refPath = schema.$ref;
+        const schemaName = refPath.split('/').pop();
+        
+        console.log(`    Referenced schema: ${schemaName}`);
+        const schemaFileName = `${schemaName}.json`;
+        await validateBodyFile(schemaFileName, operationId, fitnessPath);
+      }
+    }
+    
+    // Case 2: Multipart form data with required filenames
+    else if (requestBody.content['multipart/form-data']) {
+      console.log('  - Request body: multipart/form-data');
+      
+      const schema = requestBody.content['multipart/form-data'].schema;
+      if (!schema || !schema.required || !Array.isArray(schema.required)) {
+        return;
+      }
+      
+      // Check each required field
+      for (const requiredField of schema.required) {
+        console.log(`    Required field: ${requiredField}`);
+        const fileName = `${requiredField}.json`;
+        await validateBodyFile(fileName, operationId, fitnessPath);
+      }
+    }
   }
   
-  console.log('  - Request body: application/json');
-  
-  const schema = requestBody.content['application/json'].schema;
-  if (!schema) return;
-  
-  // Check for array items with $ref
-  if (schema.type === 'array' && schema.items && schema.items.$ref) {
-    const refPath = schema.items.$ref;
-    await validateSchemaRef(refPath, operationId, swagger, fitnessPath);
-  } 
-  // Or direct $ref to a schema
-  else if (schema.$ref) {
-    await validateSchemaRef(schema.$ref, operationId, swagger, fitnessPath);
+  /**
+   * Validate a body file exists and has content
+   */
+  async function validateBodyFile(fileName, operationId, fitnessPath) {
+    const filePath = path.join(fitnessPath, fileName);
+    
+    try {
+      await stat(filePath);
+      console.log(`    Found body file: ${fileName}`);
+      
+      // Read the file content
+      const content = await readFile(filePath, 'utf8');
+      
+      if (!content.trim()) {
+        console.log(`    Warning: ${fileName} is empty`);
+        validationReport.emptyValues.push({
+          file: fileName,
+          type: 'body',
+          operationId: operationId
+        });
+        return;
+      }
+      
+      console.log(`    ✓ Body file has content - validated successfully`);
+      
+    } catch (err) {
+      console.log(`    Warning: Body file ${fileName} not found`);
+      validationReport.missingFiles.push({
+        file: fileName,
+        type: 'body',
+        operationId: operationId
+      });
+    }
   }
-}
-
+  
+  /**
+   * Validate a schema reference
+   */
+  async function validateSchemaRef(refPath, operationId, endpoint, swagger, fitnessPath) {
+    // Extract schema name from the ref path (e.g., "#/components/schemas/ReportRequest" -> "ReportRequest")
+    const schemaName = refPath.split('/').pop();
+    
+    console.log(`    Referenced schema: ${schemaName}`);
+    
+    // Check if schema exists in the Swagger file
+    if (swagger.components && 
+        swagger.components.schemas && 
+        swagger.components.schemas[schemaName]) {
+      
+      // Look for the schema JSON file
+      const schemaFileName = `${schemaName}.json`;
+      const schemaFilePath = path.join(fitnessPath, schemaFileName);
+      
+      try {
+        await stat(schemaFilePath);
+        console.log(`    Found schema file: ${schemaFileName}`);
+        
+        // Read the file content
+        const content = await readFile(schemaFilePath, 'utf8');
+        
+        if (!content.trim()) {
+          console.log(`    Warning: ${schemaFileName} is empty`);
+          validationReport.emptyValues.push({
+            file: schemaFileName,
+            type: 'body',
+            operationId: operationId
+          });
+          return;
+        }
+        
+        console.log(`    ✓ Schema file has content - validated successfully`);
+        
+      } catch (err) {
+        console.log(`    Warning: Schema file ${schemaFileName} not found`);
+        validationReport.missingFiles.push({
+          file: schemaFileName,
+          type: 'body',
+          operationId: operationId
+        });
+      }
+      
+      // Also check for endpoint-specific body file
+      const endpointLastPart = endpoint.split('/').filter(Boolean).pop();
+      const bodyFileName = `${operationId}_${endpointLastPart}_body.json`;
+      const bodyFilePath = path.join(fitnessPath, bodyFileName);
+      
+      try {
+        await stat(bodyFilePath);
+        console.log(`    Found endpoint-specific body file: ${bodyFileName}`);
+        
+        // Read the file content
+        const content = await readFile(bodyFilePath, 'utf8');
+        
+        if (!content.trim()) {
+          console.log(`    Warning: ${bodyFileName} is empty`);
+          validationReport.emptyValues.push({
+            file: bodyFileName,
+            type: 'body',
+            operationId: operationId
+          });
+        } else {
+          console.log(`    ✓ Endpoint body file has content - validated successfully`);
+        }
+      } catch (err) {
+        // We don't log a warning here because the schema file is already found
+        // and endpoint-specific body file is optional when schema file exists
+      }
+    }
+  }
 /**
  * Validate a schema reference
  */
