@@ -387,7 +387,7 @@ async function validateSwagger(swagger, fitnessPath, validationReport, pathModul
   }
 }
 
-function generateK6Script(swagger, validationReport, pathModule, fsModule) {
+function generateK6Script(swagger, validationReport, pathModule, fsModule, environment) {
   if (validationReport.missingServerUrl) {
     console.error("Cannot generate k6 script: Missing server URL in Swagger file");
     return null;
@@ -433,7 +433,7 @@ function generateK6Script(swagger, validationReport, pathModule, fsModule) {
 
     let bodyFilePath = null;
     if (bodyFile) { // Add null check here
-      bodyFilePath = pathModule.join(process.argv[2], 'fitness', bodyFile);
+      bodyFilePath = pathModule.join(process.argv[2], 'fitness', environment, bodyFile);
     }
 
     if (bodyFilePath && fsModule.existsSync(bodyFilePath)) {
@@ -461,7 +461,7 @@ function generateK6Script(swagger, validationReport, pathModule, fsModule) {
     let headers = {};
     if (endpointDetails.headerParams && endpointDetails.headerParams.length > 0) {
       const headerParamFile = `${operationId}_${path.split('/').filter(Boolean).pop()}_header.yaml`;
-      const headerParamFilePath = pathModule.join(process.argv[2], 'fitness', headerParamFile);
+      const headerParamFilePath = pathModule.join(process.argv[2], 'fitness', environment, headerParamFile);
 
       if (fsModule.existsSync(headerParamFilePath)) {
         try {
@@ -483,7 +483,7 @@ function generateK6Script(swagger, validationReport, pathModule, fsModule) {
     let params = {};
     if (endpointDetails.queryParams && endpointDetails.queryParams.length > 0) {
       const queryParamFile = `${operationId}_${path.split('/').filter(Boolean).pop()}_path.yaml`;
-      const queryParamFilePath = pathModule.join(process.argv[2], 'fitness', queryParamFile);
+      const queryParamFilePath = pathModule.join(process.argv[2], 'fitness', environment, queryParamFile);
 
       if (fsModule.existsSync(queryParamFilePath)) {
         try {
@@ -590,6 +590,12 @@ async function validateSwaggerAndFiles() {
       process.exit(1);
     }
 
+    const environments = process.argv.slice(3);
+    if (environments.length === 0) {
+      console.error('Please provide at least one environment as an argument');
+      process.exit(1);
+    }
+
     console.log(`Checking folder: ${folderPath}`);
 
     const fitnessPath = path.join(folderPath, 'fitness');
@@ -628,22 +634,44 @@ async function validateSwaggerAndFiles() {
       process.exit(1);
     }
 
-    const validationReport = createValidationReport();
-    await validateSwagger(swagger, fitnessPath, validationReport, path); // 2. Call: Pass path
+    let atLeastOneSuccess = false;
 
-    generateReport(validationReport);
+    for (const environment of environments) {
+      console.log(`\nValidating environment: ${environment}`);
+      const envFitnessPath = path.join(fitnessPath, environment);
 
-    if (validationReport.missingServerUrl || validationReport.missingFiles.length > 0 || validationReport.emptyValues.length > 0) {
-      console.warn("Validation failed, k6 script will not be generated.");
-    } else {
-      const k6Script = generateK6Script(swagger, validationReport, path, fs); // 2. Call: Pass path and fs
-      if (k6Script) {
-        const k6ScriptPath = path.join(folderPath, 'k6_script.js');
-        fs.writeFileSync(k6ScriptPath, k6Script);
-        console.log(`\nk6 script generated successfully at: ${k6ScriptPath}`);
-      } else {
-        console.error("Failed to generate k6 script.");
+      if (!await directoryExists(envFitnessPath)) {
+        console.warn(`Environment folder ${environment} does not exist, skipping.`);
+        continue;
       }
+
+      const validationReport = createValidationReport();
+      await validateSwagger(swagger, envFitnessPath, validationReport, path); // 2. Call: Pass path
+
+      generateReport(validationReport);
+
+      const hasIssues = validationReport.missingServerUrl ||
+        validationReport.missingFiles.length > 0 ||
+        validationReport.emptyValues.length > 0 ||
+        Object.values(validationReport.endpoints).some(endpoint => endpoint.issues && endpoint.issues.length > 0);
+
+      if (hasIssues) {
+        console.warn(`Validation failed for environment ${environment}, skipping k6 script generation.`);
+      } else {
+        atLeastOneSuccess = true;
+        const k6Script = generateK6Script(swagger, validationReport, path, fs, environment); // 2. Call: Pass path and fs
+        if (k6Script) {
+          const k6ScriptPath = path.join(folderPath, `k6_script-swagger-${environment}.js`);
+          fs.writeFileSync(k6ScriptPath, k6Script);
+          console.log(`\nk6 script generated successfully for ${environment} at: ${k6ScriptPath}`);
+        } else {
+          console.error(`Failed to generate k6 script for environment ${environment}.`);
+        }
+      }
+    }
+
+    if (!atLeastOneSuccess) {
+      console.error("Validation failed for all specified environments.");
     }
 
   } catch (error) {
