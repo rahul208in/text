@@ -647,7 +647,8 @@ async function validateSwaggerAndFiles() {
       }
 
       const validationReport = createValidationReport();
-      await validateSwagger(swagger, envFitnessPath, validationReport, path); // 2. Call: Pass path
+      // Pass fs and path to validateSwagger
+      await validateSwagger(swagger, envFitnessPath, validationReport, path, fs);
 
       generateReport(validationReport);
 
@@ -681,5 +682,181 @@ async function validateSwaggerAndFiles() {
   }
 }
 
-// --- Run the validation ---r
+async function validateSwagger(swagger, fitnessPath, validationReport, pathModule, fsModule) { // 1. Definition: pathModule parameter
+  if (!swagger.servers || swagger.servers.length === 0 || !swagger.servers[0].url) {
+    validationReport.missingServerUrl = true;
+    console.log('Warning: Missing server URL in Swagger file');
+  }
+
+  if (swagger.paths) {
+    for (const [endpoint, pathItem] of Object.entries(swagger.paths)) {
+      console.log(`\nValidating endpoint: ${endpoint}`);
+
+      for (const [method, operation] of Object.entries(pathItem)) {
+        if (typeof operation === 'object') {
+          const operationId = operation.operationId;
+
+          if (!operationId) {
+            console.log(`Warning: Missing operationId for ${method.toUpperCase()} ${endpoint}`);
+            continue;
+          }
+
+          console.log(`- Operation ID: ${operationId}`);
+          validationReport.endpoints[operationId] = {
+            path: endpoint,
+            method: method,
+            queryParams: [],
+            headerParams: [],
+            bodyContent: null,
+            issues: []
+          };
+
+          if (operation.parameters) {
+            await validateParameters(operation.parameters, operationId, endpoint, fitnessPath, validationReport, pathModule, fsModule); // 2. Call: Pass path
+          }
+
+          if (operation.requestBody) {
+            await validateRequestBody(operation.requestBody, operationId, endpoint, swagger, fitnessPath, validationReport, pathModule, fsModule); // 2. Call: Pass path
+          }
+        }
+      }
+    }
+  }
+}
+
+async function validateParameters(parameters, operationId, endpoint, fitnessPath, validationReport, pathModule, fsModule) { // 1. Definition: pathModule parameter
+  const queryParams = parameters.filter(param => param.in === 'query');
+  const headerParams = parameters.filter(param => param.in === 'header');
+
+  const endpointLastPart = endpoint.split('/').filter(Boolean).pop();
+
+  if (queryParams.length > 0) {
+    console.log(`  - Query parameters: ${queryParams.map(p => p.name).join(', ')}`);
+    validationReport.endpoints[operationId].queryParams = queryParams.map(p => p.name);
+    const queryParamFileName = `${operationId}_${endpointLastPart}_path.yaml`;
+    await validateParameterFile(queryParamFileName, queryParams, 'query', operationId, fitnessPath, validationReport, pathModule, fsModule); // 2. Call: Pass path
+  }
+
+  if (headerParams.length > 0) {
+    console.log(`  - Header parameters: ${headerParams.map(p => p.name).join(', ')}`);
+    validationReport.endpoints[operationId].headerParams = headerParams.map(p => p.name);
+    const headerParamFileName = `${operationId}_${endpointLastPart}_header.yaml`;
+    await validateParameterFile(headerParamFileName, headerParams, 'header', operationId, fitnessPath, validationReport, pathModule, fsModule); // 2. Call: Pass path
+  }
+}
+
+async function validateRequestBody(requestBody, operationId, endpoint, swagger, fitnessPath, validationReport, pathModule, fsModule) { // 1. Definition: pathModule parameter
+  if (!requestBody.content) {
+    return;
+  }
+
+  if (requestBody.content['application/json']) {
+    console.log('  - Request body: application/json');
+    const schema = requestBody.content['application/json'].schema;
+    if (!schema) return;
+
+    if (schema.type === 'array' && schema.items && schema.items.$ref) {
+      const refPath = schema.items.$ref;
+      const schemaName = refPath.split('/').pop();
+      console.log(`    Referenced schema: ${schemaName}`);
+      const schemaFileName = `${schemaName}.json`;
+      await validateBodyFile(schemaFileName, operationId, fitnessPath, validationReport, pathModule, fsModule); // 2. Call: Pass path
+    } else if (schema.$ref) {
+      const refPath = schema.$ref;
+      const schemaName = refPath.split('/').pop();
+      console.log(`    Referenced schema: ${schemaName}`);
+      const schemaFileName = `${schemaName}.json`;
+      await validateBodyFile(schemaFileName, operationId, fitnessPath, validationReport, pathModule, fsModule); // 2. Call: Pass path
+    }
+  } else if (requestBody.content['multipart/form-data']) {
+    console.log('  - Request body: multipart/form-data');
+    const schema = requestBody.content['multipart/form-data'].schema;
+    if (!schema || !schema.required || !Array.isArray(schema.required)) {
+      return;
+    }
+
+    for (const requiredField of schema.required) {
+      console.log(`    Required field: ${requiredField}`);
+      const fileName = `${requiredField}.json`;
+      await validateBodyFile(fileName, operationId, fitnessPath, validationReport, pathModule, fsModule); // 2. Call: Pass path
+    }
+  }
+}
+
+async function validateBodyFile(fileName, operationId, fitnessPath, validationReport, pathModule, fsModule) { // 1. Definition: pathModule parameter
+  const filePath = pathModule.join(fitnessPath, fileName); // 3. Use: pathModule.join
+
+  try {
+    const fileExists = await util.promisify(fsModule.stat)(filePath);
+  } catch (err) {
+    console.log(`    Warning: Body file ${fileName} not found`);
+    validationReport.missingFiles.push({
+      file: fileName,
+      type: 'body',
+      operationId: operationId
+    });
+    return;
+  }
+
+  console.log(`    Found body file: ${fileName}`);
+  const content = await readFileContent(filePath);
+
+  if (!content || !content.trim()) {
+    console.log(`    Warning: ${fileName} is empty`);
+    validationReport.emptyValues.push({
+      file: fileName,
+      type: 'body',
+      operationId: operationId
+    });
+    return;
+  }
+
+  console.log(`    ✓ Body file has content - validated successfully`);
+
+  // Store the body file name in the validationReport
+  if (validationReport.endpoints[operationId]) {
+    validationReport.endpoints[operationId].bodyFile = fileName;
+  } else {
+    console.warn(`Warning: operationId ${operationId} not found in validationReport.endpoints`);
+  }
+}
+
+async function validateSchemaRef(refPath, operationId, swagger, fitnessPath, validationReport, pathModule, fsModule) { // 1. Definition: pathModule parameter
+  const schemaName = refPath.split('/').pop();
+  console.log(`    Referenced schema: ${schemaName}`);
+
+  if (swagger.components && swagger.components.schemas && swagger.components.schemas[schemaName]) {
+    const schemaFileName = `${schemaName}.json`;
+    const schemaFilePath = pathModule.join(fitnessPath, schemaFileName); // 3. Use: pathModule.join
+
+    try {
+      const fileExists = await util.promisify(fsModule.stat)(schemaFilePath);
+    } catch (err) {
+      console.log(`    Warning: Schema file ${schemaFileName} not found`);
+      validationReport.missingFiles.push({
+        file: schemaFileName,
+        type: 'body',
+        operationId: operationId
+      });
+      return;
+    }
+
+    console.log(`    Found schema file: ${schemaFileName}`);
+    const content = await readFileContent(schemaFilePath);
+
+    if (!content || !content.trim()) {
+      console.log(`    Warning: ${schemaFileName} is empty`);
+      validationReport.emptyValues.push({
+        file: schemaFileName,
+        type: 'body',
+        operationId: operationId
+      });
+      return;
+    }
+
+    console.log(`    ✓ Schema file has content - validated successfully`);
+  }
+}
+
+// --- Run the validation ---ra
 validateSwaggerAndFiles();
