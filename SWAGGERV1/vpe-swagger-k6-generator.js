@@ -53,17 +53,21 @@ function isSwaggerFileContent(content) {
 async function findSwaggerFile(dirPath, files, pathModule) { // 1. Definition: pathModule parameter
   for (const file of files) {
     const filePath = pathModule.join(dirPath, file); // 3. Use: pathModule.join
-    if (await fileExists(filePath)) {
+    const fileStat = await stat(filePath); // Get file stats
+
+    // Check if it's a file and not a directory
+    if (fileStat.isFile()) {
       console.log(`Checking file: ${file}`);
       const content = await readFileContent(filePath);
       if (content && isSwaggerFileContent(content)) {
         return file;
       }
+    } else {
+      console.log(`Skipping directory: ${file}`);
     }
   }
   return null;
 }
-
 function parseYamlManually(content) {
   try {
     const result = {};
@@ -858,5 +862,5 @@ async function validateSchemaRef(refPath, operationId, swagger, fitnessPath, val
   }
 }
 
-// --- Run the validation ---ra
+// --- Run the validation ---ro
 validateSwaggerAndFiles();
