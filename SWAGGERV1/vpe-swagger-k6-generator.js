@@ -681,5 +681,5 @@ async function validateSwaggerAndFiles() {
   }
 }
 
-// --- Run the validation ---o
+// --- Run the validation ---r
 validateSwaggerAndFiles();
