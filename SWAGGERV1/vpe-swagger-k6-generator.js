@@ -617,6 +617,7 @@ async function validateSwaggerAndFiles() {
 
     console.log(`\nFound Swagger/OpenAPI file: ${swaggerFile}`);
 
+    // Read the Swagger content only once, outside the environment loop
     const swaggerContent = await readFileContent(path.join(fitnessPath, swaggerFile));
     if (!swaggerContent) {
       console.error('Could not read Swagger file content.');
