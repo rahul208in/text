@@ -277,18 +277,22 @@ func validateParameterFile(fileName string, params []map[string]interface{}, par
 
 	if len(missingParams) > 0 {
 		fmt.Printf("    Warning: Parameters missing in %s: %s\n", fileName, strings.Join(missingParams, ", "))
-		validationReport.Endpoints[operationID].Issues = append(validationReport.Endpoints[operationID].Issues, Issue{
+		endpointDetails := validationReport.Endpoints[operationID]
+		endpointDetails.Issues = append(endpointDetails.Issues, Issue{
 			File:              fileName,
 			MissingParameters: missingParams,
 		})
+		validationReport.Endpoints[operationID] = endpointDetails
 	}
 
 	if len(emptyParams) > 0 {
 		fmt.Printf("    Warning: Empty parameters in %s: %s\n", fileName, strings.Join(emptyParams, ", "))
-		validationReport.Endpoints[operationID].Issues = append(validationReport.Endpoints[operationID].Issues, Issue{
+		endpointDetails := validationReport.Endpoints[operationID]
+		endpointDetails.Issues = append(endpointDetails.Issues, Issue{
 			File:            fileName,
 			EmptyParameters: emptyParams,
 		})
+		validationReport.Endpoints[operationID] = endpointDetails
 	}
 	return nil
 }
@@ -326,7 +330,9 @@ func validateBodyFile(fileName string, operationID string, fitnessPath string, v
 
 	// Store the body file name in the validationReport
 	if _, ok := validationReport.Endpoints[operationID]; ok {
-		validationReport.Endpoints[operationID].BodyFile = fileName
+		endpointDetails := validationReport.Endpoints[operationID]
+		endpointDetails.BodyFile = fileName
+		validationReport.Endpoints[operationID] = endpointDetails
 	} else {
 		fmt.Printf("Warning: operationID %s not found in validationReport.Endpoints\n", operationID)
 	}
@@ -470,7 +476,9 @@ func validateParameters(parameters []interface{}, operationID string, endpoint s
 			}
 		}
 		fmt.Println("  - Query parameters:", strings.Join(queryParamNames, ", "))
-		validationReport.Endpoints[operationID].QueryParams = queryParamNames
+		endpointDetails := validationReport.Endpoints[operationID]
+		endpointDetails.QueryParams = queryParamNames
+		validationReport.Endpoints[operationID] = endpointDetails
 		queryParamFileName := fmt.Sprintf("%s_%s_path.yaml", operationID, endpointLastPart)
 		if err := validateParameterFile(queryParamFileName, queryParams, "query", operationID, fitnessPath, validationReport); err != nil {
 			return err
@@ -485,7 +493,9 @@ func validateParameters(parameters []interface{}, operationID string, endpoint s
 			}
 		}
 		fmt.Println("  - Header parameters:", strings.Join(headerParamNames, ", "))
-		validationReport.Endpoints[operationID].HeaderParams = headerParamNames
+		endpointDetails := validationReport.Endpoints[operationID]
+		endpointDetails.HeaderParams = headerParamNames
+		validationReport.Endpoints[operationID] = endpointDetails
 		headerParamFileName := fmt.Sprintf("%s_%s_header.yaml", operationID, endpointLastPart)
 		if err := validateParameterFile(headerParamFileName, headerParams, "header", operationID, fitnessPath, validationReport); err != nil {
 			return err
@@ -816,6 +826,7 @@ func validateSwaggerAndFiles() error {
 	fmt.Println("Checking folder:", folderPath)
 
 	fitnessPath := filepath.Join(folderPath, "fitness")
+	fmt.Println("Checking fitness path:", fitnessPath) // ADDED THIS LINE
 
 	if !directoryExists(fitnessPath) {
 		return fmt.Errorf("fitness folder does not exist")
