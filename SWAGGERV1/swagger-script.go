@@ -934,9 +934,16 @@ func validateSwaggerAndFiles() error {
 		fmt.Println() // Add an empty line for better separation
 	}
 
-	// Create or append to env_vars file only if at least one test script is successfully generated
+	// Create or append to .env_vars file only if at least one test script is successfully generated
 	if len(successEnvironments) > 0 {
-		envVarsFileName := filepath.Join(folderPath, "env_vars")
+		// Get the absolute path of the folder
+		absFolderPath, err := filepath.Abs(folderPath)
+		if err != nil {
+			fmt.Printf("Error getting absolute path: %v\n", err)
+			return nil // Or handle the error as needed
+		}
+
+		envVarsFileName := filepath.Join(absFolderPath, ".env_vars")
 		envVarsContent := "export testType=default\nexport swagger=true\n"
 
 		// Check if the file exists
@@ -944,21 +951,21 @@ func validateSwaggerAndFiles() error {
 			// Create the file if it doesn't exist
 			err = ioutil.WriteFile(envVarsFileName, []byte(envVarsContent), 0644)
 			if err != nil {
-				fmt.Printf("Error creating env_vars file: %v\n", err)
+				fmt.Printf("Error creating .env_vars file: %v\n", err)
 			} else {
-				fmt.Println("Successfully created env_vars file")
+				fmt.Println("Successfully created .env_vars file")
 			}
 		} else {
 			// Append to the file if it exists
 			f, err := os.OpenFile(envVarsFileName, os.O_APPEND|os.O_WRONLY, 0644)
 			if err != nil {
-				fmt.Printf("Error opening env_vars file: %v\n", err)
+				fmt.Printf("Error opening .env_vars file: %v\n", err)
 			} else {
 				defer f.Close()
 				if _, err := f.WriteString(envVarsContent); err != nil {
-					fmt.Printf("Error appending to env_vars file: %v\n", err)
+					fmt.Printf("Error appending to .env_vars file: %v\n", err)
 				} else {
-					fmt.Println("Successfully appended to env_vars file")
+					fmt.Println("Successfully appended to .env_vars file")
 				}
 			}
 		}
