@@ -210,6 +210,7 @@ func createValidationReport() ValidationReport {
 		EmptyValues:      []EmptyValue{},
 	}
 }
+// Part 2: Validation Functions
 
 func validateParameterFile(fileName string, params []map[string]interface{}, paramType string, operationID string, fitnessPath string, validationReport *ValidationReport) error {
 	filePath := filepath.Join(fitnessPath, fileName)
@@ -492,6 +493,7 @@ func validateParameters(parameters []interface{}, operationID string, endpoint s
 	}
 	return nil
 }
+// Part 3: validateSwagger Function
 
 func validateSwagger(swagger map[string]interface{}, fitnessPath string, validationReport *ValidationReport) error {
 	servers, ok := swagger["servers"].([]interface{})
@@ -563,6 +565,7 @@ func validateSwagger(swagger map[string]interface{}, fitnessPath string, validat
 	}
 	return nil
 }
+// Part 4: generateK6Script Function
 
 func generateK6Script(swagger map[string]interface{}, validationReport ValidationReport, environment string) (string, error) {
 	if validationReport.MissingServerURL {
@@ -635,6 +638,10 @@ export default function () {
 				k6Code += fmt.Sprintf("  const %s = null;\n", bodyVariableName)
 			} else {
 				bodyContent = fileContent
+				// Escape newlines
+				bodyContent = strings.ReplaceAll(bodyContent, "\n", "\\n")
+				bodyContent = strings.ReplaceAll(bodyContent, "\r", "\\r")
+
 				// Try to parse as JSON, if it fails, treat it as a string
 				if json.Valid([]byte(bodyContent)) {
 					k6Code += fmt.Sprintf("  const %s = %s;\n", bodyVariableName, bodyContent) // If valid JSON, use directly
@@ -717,6 +724,7 @@ export default function () {
 `
 	return k6Code, nil
 }
+// Part 5: generateReport, validateSwaggerAndFiles, and main Functions
 
 func generateReport(validationReport ValidationReport) {
 	fmt.Println("\n====================================")
@@ -795,12 +803,12 @@ func generateReport(validationReport ValidationReport) {
 }
 
 func validateSwaggerAndFiles() error {
-	folderPath := os.Args[2]
+	folderPath := os.Args[1]
 	if folderPath == "" {
 		return fmt.Errorf("please provide a folder path as an argument")
 	}
 
-	environments := os.Args[3:]
+	environments := os.Args[2:]
 	if len(environments) == 0 {
 		return fmt.Errorf("please provide at least one environment as an argument")
 	}
@@ -875,10 +883,47 @@ func validateSwaggerAndFiles() error {
 			}
 		}
 
-		if hasIssues {
-			fmt.Printf("Validation failed for environment %s, skipping k6 script generation.\n", environment)
-		} else {
+		if !hasIssues {
 			atLeastOneSuccess = true
+			fmt.Println("\nGenerating k6 script for environment:", environment)
 			k6Script, err := generateK6Script(swagger, validationReport, environment)
 			if err != nil {
-				return fmt.Errorf("
+				fmt.Printf("Error generating k6 script: %v\n", err)
+			} else {
+				k6FileName := fmt.Sprintf("k6_script_%s.js", environment)
+				err = ioutil.WriteFile(k6FileName, []byte(k6Script), 0644)
+				if err != nil {
+					fmt.Printf("Error writing k6 script to file: %v\n", err)
+				} else {
+					fmt.Printf("Successfully generated k6 script: %s\n", k6FileName)
+				}
+			}
+		} else {
+			fmt.Printf("Skipping k6 script generation for %s due to validation issues.\n", environment)
+		}
+	}
+
+	if !atLeastOneSuccess {
+		return fmt.Errorf("validation failed for all specified environments")
+	}
+
+	return nil
+}
+
+func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: go run main.go <folder_path> <environment1> <environment2> ...")
+		fmt.Println("Example: go run main.go ./test dev qa")
+		return
+	}
+
+	err := validateSwaggerAndFiles()
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("\nCompleted validation and k6 script generation.")
+}
