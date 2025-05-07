@@ -636,7 +636,7 @@ export default function () {
 
 		var bodyFilePath string
 		if bodyFile != "" {
-			folderPath := os.Args[2]
+			folderPath := os.Args[1] // Corrected this line
 			bodyFilePath = filepath.Join(folderPath, "fitness", environment, bodyFile)
 		}
 
@@ -669,7 +669,7 @@ export default function () {
 		if len(endpointDetails.HeaderParams) > 0 {
 			endpointLastPart := filepath.Base(path)
 			headerParamFile := fmt.Sprintf("%s_%s_header.yaml", operationID, endpointLastPart)
-			folderPath := os.Args[2]
+			folderPath := os.Args[1] // Corrected this line
 			headerParamFilePath := filepath.Join(folderPath, "fitness", environment, headerParamFile)
 
 			if fileExists(headerParamFilePath) {
@@ -699,7 +699,7 @@ export default function () {
 		if len(endpointDetails.QueryParams) > 0 {
 			endpointLastPart := filepath.Base(path)
 			queryParamFile := fmt.Sprintf("%s_%s_path.yaml", operationID, endpointLastPart)
-			folderPath := os.Args[2]
+			folderPath := os.Args[1] // Corrected this line
 			queryParamFilePath := filepath.Join(folderPath, "fitness", environment, queryParamFile)
 
 			if fileExists(queryParamFilePath) {
@@ -818,15 +818,9 @@ func validateSwaggerAndFiles() error {
 		return fmt.Errorf("please provide a folder path as an argument")
 	}
 
-	environments := os.Args[2:]
-	if len(environments) == 0 {
-		return fmt.Errorf("please provide at least one environment as an argument")
-	}
-
 	fmt.Println("Checking folder:", folderPath)
 
 	fitnessPath := filepath.Join(folderPath, "fitness")
-	fmt.Println("Checking fitness path:", fitnessPath) // ADDED THIS LINE
 
 	if !directoryExists(fitnessPath) {
 		return fmt.Errorf("fitness folder does not exist")
@@ -865,21 +859,35 @@ func validateSwaggerAndFiles() error {
 		}
 	}
 
-	atLeastOneSuccess := false
+	// Detect environment folders
+	environmentFolders := detectEnvironmentFolders(fitnessPath)
+	fmt.Println("\nDetected environment folders:", environmentFolders)
 
-	for _, environment := range environments {
-		fmt.Println("\nValidating environment:", environment)
+	atLeastOneSuccess := false
+	successEnvironments := []string{}
+	failedEnvironments := []string{}
+	failureReasons := make(map[string]string)
+
+	for _, environment := range environmentFolders {
+		fmt.Println("\n====================================================")
+		fmt.Println("  Validating environment:", environment)
+		fmt.Println("====================================================")
 		envFitnessPath := filepath.Join(fitnessPath, environment)
 
 		if !directoryExists(envFitnessPath) {
 			fmt.Printf("Environment folder %s does not exist, skipping.\n", environment)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = "Environment folder does not exist"
 			continue
 		}
 
 		validationReport := createValidationReport()
 		// Pass fs and path to validateSwagger
 		if err := validateSwagger(swagger, envFitnessPath, &validationReport); err != nil {
-			return err
+			fmt.Printf("Error validating Swagger for environment %s: %v\n", environment, err)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = fmt.Sprintf("Swagger validation error: %v", err)
+			continue
 		}
 
 		generateReport(validationReport)
@@ -900,33 +908,94 @@ func validateSwaggerAndFiles() error {
 			k6Script, err := generateK6Script(swagger, validationReport, environment)
 			if err != nil {
 				fmt.Printf("Error generating k6 script: %v\n", err)
+				failedEnvironments = append(failedEnvironments, environment)
+				failureReasons[environment] = fmt.Sprintf("K6 script generation error: %v", err)
 			} else {
-				k6FileName := fmt.Sprintf("k6_script_%s.js", environment)
+				k6FileName := fmt.Sprintf("vpe-default-k6-swagger_%s.js", environment) // Updated file name
 				err = ioutil.WriteFile(k6FileName, []byte(k6Script), 0644)
 				if err != nil {
 					fmt.Printf("Error writing k6 script to file: %v\n", err)
+					failedEnvironments = append(failedEnvironments, environment)
+					failureReasons[environment] = fmt.Sprintf("Error writing k6 script to file: %v", err)
 				} else {
-					fmt.Printf("Successfully generated k6 script: %s\n", k6FileName)
+					fmt.Println("-------------------------------------------------------------------")
+					fmt.Printf("  Successfully generated k6 script: %s\n", k6FileName) // Updated output
+					fmt.Println("-------------------------------------------------------------------")
+					successEnvironments = append(successEnvironments, environment)
 				}
 			}
 		} else {
 			fmt.Printf("Skipping k6 script generation for %s due to validation issues.\n", environment)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = "Validation issues found"
+		}
+		fmt.Println() // Add an empty line for better separation
+	}
+
+	fmt.Println("\n====================")
+	fmt.Println("      SUMMARY")
+	fmt.Println("====================")
+
+	if len(successEnvironments) > 0 {
+		fmt.Println("\nSuccessfully generated k6 scripts for:")
+		for _, env := range successEnvironments {
+			fmt.Println("-", env)
+		}
+	} else {
+		fmt.Println("\nNo k6 scripts were successfully generated.")
+	}
+
+	if len(failedEnvironments) > 0 {
+		fmt.Println("\nFailed to generate k6 scripts for:")
+		for _, env := range failedEnvironments {
+			fmt.Printf("- %s: %s\n", env, failureReasons[env])
 		}
 	}
 
-	if !atLeastOneSuccess {
+	if !atLeastOneSuccess && len(failedEnvironments) > 0 {
 		return fmt.Errorf("validation failed for all specified environments")
 	}
 
 	return nil
 }
 
+func detectEnvironmentFolders(fitnessPath string) []string {
+	var environmentFolders []string
+	files, err := ioutil.ReadDir(fitnessPath)
+	if err != nil {
+		fmt.Println("Error reading directory:", err)
+		return environmentFolders // Return empty slice on error
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			name := file.Name()
+			baseName := filepath.Base(name) // Get the base name of the folder
+
+			// Check for "dev"
+			if strings.Contains(baseName, "dev") {
+				if baseName == "dev" || strings.HasPrefix(baseName, "gt-dev") || strings.HasPrefix(baseName, "sw-dev") {
+					environmentFolders = append(environmentFolders, name)
+				}
+			}
+
+			// Check for "uat"
+			if strings.Contains(baseName, "uat") {
+				if baseName == "uat" || strings.HasPrefix(baseName, "gt-uat") || strings.HasPrefix(baseName, "sw-uat") {
+					environmentFolders = append(environmentFolders, name)
+				}
+			}
+		}
+	}
+
+	return environmentFolders
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: go run main.go <folder_path> <environment1> <environment2> ...")
-		fmt.Println("Example: go run main.go ./test dev qa")
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: go run main.go <folder_path>")
 		return
 	}
 
