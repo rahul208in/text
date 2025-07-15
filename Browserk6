@@ -1,0 +1,231 @@
+
+# Create a comprehensive k6 browser test script
+script_content = '''import { browser } from 'k6/experimental/browser';
+import { check } from 'k6';
+
+export const options = {
+  scenarios: {
+    browser: {
+      executor: 'shared-iterations',
+      options: {
+        browser: {
+          type: 'chromium',
+        },
+      },
+    },
+  },
+  thresholds: {
+    checks: ['rate==1.0'],
+  },
+};
+
+export default async function () {
+  const page = browser.newPage();
+  
+  try {
+    // Navigate to the sample website
+    console.log('Navigating to example.com...');
+    await page.goto('https://example.com');
+    
+    // Wait for page to load
+    await page.waitForLoadState('networkidle');
+    
+    // Take initial screenshot
+    await page.screenshot({ path: 'screenshots/homepage.png' });
+    console.log('Screenshot taken: homepage.png');
+    
+    // Validate page title
+    const title = await page.title();
+    check(title, {
+      'Page title is correct': (t) => t === 'Example Domain',
+    });
+    console.log(`Page title: ${title}`);
+    
+    // Look for and validate specific text
+    const mainHeading = page.locator('h1');
+    await mainHeading.waitFor();
+    
+    const headingText = await mainHeading.textContent();
+    check(headingText, {
+      'Main heading contains "Example Domain"': (text) => text.includes('Example Domain'),
+    });
+    console.log(`Main heading text: ${headingText}`);
+    
+    // Validate paragraph text
+    const paragraph = page.locator('p').first();
+    const paragraphText = await paragraph.textContent();
+    check(paragraphText, {
+      'Paragraph contains expected text': (text) => text.includes('This domain is for use in illustrative examples'),
+    });
+    console.log(`Paragraph text: ${paragraphText}`);
+    
+    // Check if "More information..." link exists and validate it
+    const moreInfoLink = page.locator('a[href*="iana.org"]');
+    const linkExists = await moreInfoLink.count() > 0;
+    check(linkExists, {
+      'More information link exists': (exists) => exists === true,
+    });
+    
+    if (linkExists) {
+      const linkText = await moreInfoLink.textContent();
+      console.log(`Link text: ${linkText}`);
+      
+      // Take screenshot before clicking
+      await page.screenshot({ path: 'screenshots/before_click.png' });
+      
+      // Click the link (opens in new tab/window)
+      await moreInfoLink.click();
+      
+      // Wait a moment for any potential navigation
+      await page.waitForTimeout(2000);
+      
+      // Take screenshot after interaction
+      await page.screenshot({ path: 'screenshots/after_click.png' });
+    }
+    
+    // Validate page structure - check for specific elements
+    const bodyElement = page.locator('body');
+    const bodyExists = await bodyElement.count() > 0;
+    check(bodyExists, {
+      'Body element exists': (exists) => exists === true,
+    });
+    
+    // Check viewport and page dimensions
+    const viewportSize = page.viewportSize();
+    console.log(`Viewport size: ${viewportSize.width}x${viewportSize.height}`);
+    
+    // Validate CSS styling (example)
+    const bodyStyles = await bodyElement.evaluate((el) => {
+      const styles = window.getComputedStyle(el);
+      return {
+        backgroundColor: styles.backgroundColor,
+        fontFamily: styles.fontFamily,
+      };
+    });
+    console.log(`Body styles:`, bodyStyles);
+    
+    // Test responsive behavior - change viewport size
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.screenshot({ path: 'screenshots/mobile_view.png' });
+    console.log('Mobile viewport screenshot taken');
+    
+    // Reset to desktop view
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    
+    // Validate page performance metrics
+    const performanceMetrics = await page.evaluate(() => {
+      const navigation = performance.getEntriesByType('navigation')[0];
+      return {
+        loadTime: navigation.loadEventEnd - navigation.loadEventStart,
+        domContentLoaded: navigation.domContentLoadedEventEnd - navigation.domContentLoadedEventStart,
+        responseTime: navigation.responseEnd - navigation.requestStart,
+      };
+    });
+    
+    console.log('Performance metrics:', performanceMetrics);
+    
+    check(performanceMetrics.loadTime, {
+      'Page load time is reasonable': (time) => time < 5000, // Less than 5 seconds
+    });
+    
+    // Final screenshot
+    await page.screenshot({ path: 'screenshots/final_state.png' });
+    
+    console.log('Browser test completed successfully');
+    
+  } catch (error) {
+    console.error('Test failed:', error);
+    await page.screenshot({ path: 'screenshots/error_state.png' });
+    throw error;
+  } finally {
+    page.close();
+  }
+}
+
+// Additional test function for form interactions (if needed)
+export async function testFormInteractions() {
+  const page = browser.newPage();
+  
+  try {
+    // Navigate to a page with forms (using httpbin for testing)
+    await page.goto('https://httpbin.org/forms/post');
+    
+    // Fill out form fields
+    await page.fill('input[name="custname"]', 'John Doe');
+    await page.fill('input[name="custtel"]', '123-456-7890');
+    await page.fill('input[name="custemail"]', 'john@example.com');
+    
+    // Select from dropdown
+    await page.selectOption('select[name="size"]', 'large');
+    
+    // Check radio button
+    await page.check('input[name="topping"][value="bacon"]');
+    
+    // Take screenshot of filled form
+    await page.screenshot({ path: 'screenshots/filled_form.png' });
+    
+    // Submit form
+    await page.click('input[type="submit"]');
+    
+    // Wait for response page
+    await page.waitForLoadState('networkidle');
+    
+    // Validate form submission
+    const responseText = await page.textContent('body');
+    check(responseText, {
+      'Form submitted successfully': (text) => text.includes('John Doe'),
+    });
+    
+    await page.screenshot({ path: 'screenshots/form_submitted.png' });
+    
+  } finally {
+    page.close();
+  }
+}'''
+
+# Write the script to a file
+with open('k6-browser-test.js', 'w') as f:
+    f.write(script_content)
+
+print("✅ k6 browser test script created: k6-browser-test.js")
+print("\n📋 Script features:")
+print("- Uses Chromium browser")
+print("- Navigates to example.com")
+print("- Validates page title and text content")
+print("- Takes multiple screenshots")
+print("- Tests responsive design")
+print("- Measures performance metrics")
+print("- Includes error handling")
+print("- Additional form testing function")
+```Perfect! I've created a comprehensive k6 browser test script that uses Chromium and includes all the features you requested. Here's what the script does:
+
+## Key Features:
+
+**🌐 Navigation & Text Validation:**
+- Navigates to example.com
+- Validates page title and heading text
+- Checks for specific paragraph content
+- Verifies link existence and text
+
+**📸 Screenshots:**
+- Takes screenshots at multiple stages (homepage, before/after interactions, mobile view, final state)
+- Includes error state screenshots for debugging
+
+**🔍 Browser Interactions:**
+- Clicks links and handles navigation
+- Tests responsive design by changing viewport sizes
+- Measures performance metrics (load time, DOM content loaded, response time)
+
+**⚙️ Configuration:**
+- Uses Chromium browser explicitly
+- Includes proper error handling and cleanup
+- Sets up thresholds for test validation
+
+## To run this script:
+
+```bash
+# Make sure you have k6 installed with browser support
+k6 run k6-browser-test.js
+
+# Or run with specific options
+k6 run --out json=results.json k6-browser-test.js
