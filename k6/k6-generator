@@ -1,0 +1,1984 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+	"k6-generator/constants"
+	"gopkg.in/yaml.v2"
+)
+
+var swaggerIndicators = []string{
+	`"openapi":`,
+	`"swagger":`,
+	`'openapi':`,
+	`'swagger':`,
+}
+
+type ValidationReport struct {
+	MissingServerURL bool                           `json:"missingServerUrl"`
+	Endpoints        map[string]EndpointDetails     `json:"endpoints"`
+	MissingFiles     []MissingFile                  `json:"missingFiles"`
+	EmptyValues      []EmptyValue                   `json:"emptyValues"`
+}
+
+type EndpointDetails struct {
+	Path         string      `json:"path"`
+	Method       string      `json:"method"`
+	QueryParams  []string    `json:"queryParams"`
+	HeaderParams []string    `json:"headerParams"`
+	BodyContent  interface{} `json:"bodyContent"`
+	BodyFile     string      `json:"bodyFile,omitempty"`
+	Issues       []Issue     `json:"issues"`
+}
+
+type MissingFile struct {
+	File        string `json:"file"`
+	Type        string `json:"type"`
+	OperationID string `json:"operationId"`
+}
+
+type EmptyValue struct {
+	File        string `json:"file"`
+	Type        string `json:"type"`
+	OperationID string `json:"operationId"`
+	Issue       string `json:"issue,omitempty"`
+}
+
+type Issue struct {
+	File                       string   `json:"file,omitempty"`
+	MissingParameters          []string `json:"missingParameters,omitempty"`
+	EmptyParameters            []string `json:"emptyParameters,omitempty"`
+	MissingRequiredProperties  []string `json:"missingRequiredProperties,omitempty"`
+	TypeValidationErrors       []string `json:"typeValidationErrors,omitempty"`
+	Issue                      string   `json:"issue,omitempty"`
+}
+
+func readFileContent(filePath string) (string, error) {
+	content, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("error reading file %s: %w", filePath, err)
+	}
+	return string(content), nil
+}
+
+func directoryExists(dirPath string) bool {
+	fileInfo, err := os.Stat(dirPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+		return false // Or handle other errors as needed
+	}
+	return fileInfo.IsDir()
+}
+
+func fileExists(filePath string) bool {
+	_, err := os.Stat(filePath)
+	return !os.IsNotExist(err)
+}
+
+func isSwaggerFileContent(content string) bool {
+	firstPortion := content
+	if len(content) > 1000 {
+		firstPortion = content[:1000]
+	}
+
+	for _, indicator := range swaggerIndicators {
+		if strings.Contains(firstPortion, indicator) {
+			return true
+		}
+	}
+	return false
+}
+
+func findSwaggerFile(dirPath string) (string, error) {
+	files, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return "", err
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			fmt.Println("Skipping directory:", file.Name())
+			continue
+		}
+
+		filePath := filepath.Join(dirPath, file.Name())
+		fmt.Println("Checking file:", file.Name())
+
+		content, err := readFileContent(filePath)
+		if err != nil {
+			fmt.Println("Error reading file:", file.Name(), err)
+			continue
+		}
+
+		if isSwaggerFileContent(content) {
+			return file.Name(), nil
+		}
+	}
+	return "", nil
+}
+
+func parseYamlManually(content string) map[string]string {
+	result := make(map[string]string)
+	content = strings.Replace(content, "\r\n", "\n", -1)
+
+	// Define structs to match the expected YAML structure
+	type Parameter struct {
+		Name  string `yaml:"name"`
+		Value string `yaml:"value"`
+	}
+
+	type Root struct {
+		Parameters struct {
+			Parameter interface{} `yaml:"parameter"` // Can be single object or array
+		} `yaml:"parameters"`
+		Headers struct {
+			Header interface{} `yaml:"header"` // Can be single object or array
+		} `yaml:"headers"`
+		Header interface{} `yaml:"header"` // Direct header field (alternative naming)
+	}
+
+	var parsedYaml Root
+	if err := yaml.Unmarshal([]byte(content), &parsedYaml); err != nil {
+		fmt.Printf("Error parsing YAML content: %v\n", err)
+		return result
+	}
+
+	// Extract parameter values (handle both single and array)
+	if parsedYaml.Parameters.Parameter != nil {
+		switch params := parsedYaml.Parameters.Parameter.(type) {
+		case map[interface{}]interface{}: // Single parameter object
+			var singleParam Parameter
+			if err := mapToStruct(params, &singleParam); err == nil {
+				if singleParam.Name != "" && singleParam.Value != "" {
+					result[singleParam.Name] = singleParam.Value
+				}
+			}
+		case []interface{}: // Array of parameter objects
+			for _, item := range params {
+				var param Parameter
+				if err := mapToStruct(item, &param); err == nil {
+					if param.Name != "" && param.Value != "" {
+						result[param.Name] = param.Value
+					}
+				}
+			}
+		}
+	}
+
+	// Extract header values - check both "headers.header" and direct "header"
+	var headerData interface{}
+	if parsedYaml.Headers.Header != nil {
+		headerData = parsedYaml.Headers.Header
+	} else if parsedYaml.Header != nil {
+		headerData = parsedYaml.Header
+	}
+
+	if headerData != nil {
+		switch headers := headerData.(type) {
+		case map[interface{}]interface{}: // Single header object
+			var singleHeader Parameter
+			if err := mapToStruct(headers, &singleHeader); err == nil {
+				if singleHeader.Name != "" && singleHeader.Value != "" {
+					result[singleHeader.Name] = singleHeader.Value
+				}
+			}
+		case []interface{}: // Array of header objects
+			for _, item := range headers {
+				var header Parameter
+				if err := mapToStruct(item, &header); err == nil {
+					if header.Name != "" && header.Value != "" {
+						result[header.Name] = header.Value
+					}
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// Helper function to convert map to struct
+func mapToStruct(input interface{}, output interface{}) error {
+	data, err := yaml.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("error marshaling input: %v", err)
+	}
+
+	if err := yaml.Unmarshal(data, output); err != nil {
+		return fmt.Errorf("error unmarshaling to struct: %v", err)
+	}
+
+	return nil
+}
+
+func createValidationReport() ValidationReport {
+	return ValidationReport{
+		MissingServerURL: false,
+		Endpoints:        make(map[string]EndpointDetails),
+		MissingFiles:     []MissingFile{},
+		EmptyValues:      []EmptyValue{},
+	}
+}
+
+// Part 2: Validation Functions
+func validateParameterFile(fileName string, params []map[string]interface{}, paramType string, operationID string, fitnessPath string, validationReport *ValidationReport, swagger map[string]interface{}) error {
+	filePath := filepath.Join(fitnessPath, fileName)
+
+	// Check if the file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		fmt.Printf("Warning: %s parameter file %s not found\n", paramType, fileName)
+		validationReport.MissingFiles = append(validationReport.MissingFiles, MissingFile{
+			File:        fileName,
+			Type:        paramType,
+			OperationID: operationID,
+		})
+		return nil
+	}
+
+	content, err := readFileContent(filePath)
+	if err != nil {
+		return err
+	}
+
+	paramValues := parseYamlManually(content)
+	if len(paramValues) == 0 {
+		fmt.Printf("Warning: Unable to parse content of %s or no parameters found\n", fileName)
+		validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+			File:        fileName,
+			Type:        paramType,
+			OperationID: operationID,
+			Issue:       "Cannot parse content or no parameters found",
+		})
+		return nil
+	}
+
+	// Populate parameters in K6 script
+	fmt.Printf("Successfully parsed parameters from %s\n", fileName)
+	for name, value := range paramValues {
+		fmt.Printf("Parameter: %s = %s\n", name, value)
+	}
+
+	return nil
+}
+
+func validateBodyFile(fileName string, operationID string, fitnessPath string, validationReport *ValidationReport, swagger map[string]interface{}) error {
+	filePath := filepath.Join(fitnessPath, fileName)
+
+	// Check if the file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		fmt.Printf("Warning: Body file %s not found\n", fileName)
+		validationReport.MissingFiles = append(validationReport.MissingFiles, MissingFile{
+			File:        fileName,
+			Type:        "body",
+			OperationID: operationID,
+		})
+
+		// Attempt to use example data from Swagger JSON - make this more generic
+		bodyContent := ""
+		if paths, ok := swagger["paths"].(map[string]interface{}); ok {
+			for _, pathValue := range paths {
+				if pathMap, ok := pathValue.(map[string]interface{}); ok {
+					for _, methodValue := range pathMap {
+						if operationMap, ok := methodValue.(map[string]interface{}); ok {
+							if opID, exists := operationMap["operationId"].(string); exists && opID == operationID {
+								if requestBody, ok := operationMap["requestBody"].(map[string]interface{}); ok {
+									if content, ok := requestBody["content"].(map[string]interface{}); ok {
+										if applicationJSON, ok := content["application/json"].(map[string]interface{}); ok {
+											if examples, ok := applicationJSON["examples"].(map[string]interface{}); ok {
+												// Try to get any example
+												for _, example := range examples {
+													if exampleMap, ok := example.(map[string]interface{}); ok {
+														if value, ok := exampleMap["value"]; ok {
+															bodyContent = fmt.Sprintf("%v", value)
+															break
+														}
+													}
+												}
+											}
+											// If no examples, try schema
+											if bodyContent == "" {
+												if schema, ok := applicationJSON["schema"].(map[string]interface{}); ok {
+													if example, ok := schema["example"]; ok {
+														bodyContent = fmt.Sprintf("%v", example)
+													}
+												}
+											}
+										}
+									}
+								}
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if bodyContent != "" {
+			fmt.Printf("Using example data from Swagger JSON for body file %s\n", fileName)
+			validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+				File:        fileName,
+				Type:        "body",
+				OperationID: operationID,
+				Issue:       "File not found, using example data from Swagger JSON",
+			})
+		}
+
+		return nil
+	}
+
+	// Read the file content
+	content, err := readFileContent(filePath)
+	if err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(content) == "" {
+		fmt.Printf("Warning: %s is empty\n", fileName)
+		validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+			File:        fileName,
+			Type:        "body",
+			OperationID: operationID,
+		})
+
+		// Attempt to use example data from Swagger JSON - same logic as above
+		bodyContent := ""
+		if paths, ok := swagger["paths"].(map[string]interface{}); ok {
+			for _, pathValue := range paths {
+				if pathMap, ok := pathValue.(map[string]interface{}); ok {
+					for _, methodValue := range pathMap {
+						if operationMap, ok := methodValue.(map[string]interface{}); ok {
+							if opID, exists := operationMap["operationId"].(string); exists && opID == operationID {
+								if requestBody, ok := operationMap["requestBody"].(map[string]interface{}); ok {
+									if content, ok := requestBody["content"].(map[string]interface{}); ok {
+										if applicationJSON, ok := content["application/json"].(map[string]interface{}); ok {
+											if examples, ok := applicationJSON["examples"].(map[string]interface{}); ok {
+												// Try to get any example
+												for _, example := range examples {
+													if exampleMap, ok := example.(map[string]interface{}); ok {
+														if value, ok := exampleMap["value"]; ok {
+															bodyContent = fmt.Sprintf("%v", value)
+															break
+														}
+													}
+												}
+											}
+											// If no examples, try schema
+											if bodyContent == "" {
+												if schema, ok := applicationJSON["schema"].(map[string]interface{}); ok {
+													if example, ok := schema["example"]; ok {
+														bodyContent = fmt.Sprintf("%v", example)
+													}
+												}
+											}
+										}
+									}
+								}
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if bodyContent != "" {
+			fmt.Printf("Using example data from Swagger JSON for body file %s\n", fileName)
+			validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+				File:        fileName,
+				Type:        "body",
+				OperationID: operationID,
+				Issue:       "File empty, using example data from Swagger JSON",
+			})
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+func validateSchemaRef(refPath string, operationID string, swagger map[string]interface{}, fitnessPath string, validationReport *ValidationReport) error {
+	schemaName := filepath.Base(refPath)
+	fmt.Printf("Referenced schema: %s\n", schemaName)
+
+	components, ok := swagger["components"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	schemas, ok := components["schemas"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	if _, ok := schemas[schemaName]; ok {
+		schemaFileName := schemaName + ".json"
+		schemaFilePath := filepath.Join(fitnessPath, schemaFileName)
+
+		if _, err := os.Stat(schemaFilePath); os.IsNotExist(err) {
+			fmt.Printf("Warning: Schema file %s not found\n", schemaFileName)
+			validationReport.MissingFiles = append(validationReport.MissingFiles, MissingFile{
+				File:        schemaFileName,
+				Type:        "body",
+				OperationID: operationID,
+			})
+			return nil
+		}
+
+		content, err := readFileContent(schemaFilePath)
+		if err != nil {
+			return err
+		}
+
+		if strings.TrimSpace(content) == "" {
+			fmt.Printf("Warning: %s is empty\n", schemaFileName)
+			validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+				File:        schemaFileName,
+				Type:        "body",
+				OperationID: operationID,
+			})
+		}
+	}
+
+	return nil
+}
+
+func validateHeaders(fileName string, headerParams []map[string]interface{}, operationID string, fitnessPath string, validationReport *ValidationReport, swagger map[string]interface{}) error {
+	filePath := filepath.Join(fitnessPath, fileName)
+
+	// Check if the file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		fmt.Printf("Warning: Header file %s not found\n", fileName)
+		validationReport.MissingFiles = append(validationReport.MissingFiles, MissingFile{
+			File:        fileName,
+			Type:        "header",
+			OperationID: operationID,
+		})
+
+		// Attempt to use example data from Swagger JSON
+		headerValues := make(map[string]string)
+		for _, param := range headerParams {
+			if name, ok := param["name"].(string); ok {
+				if example, ok := param["example"]; ok {
+					headerValues[name] = fmt.Sprintf("%v", example)
+				} else if schema, ok := param["schema"].(map[string]interface{}); ok {
+					if defaultValue, ok := schema["default"]; ok {
+						headerValues[name] = fmt.Sprintf("%v", defaultValue)
+					}
+				}
+			}
+		}
+
+		if len(headerValues) > 0 {
+			fmt.Printf("Using example data from Swagger JSON for header file %s\n", fileName)
+			validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+				File:        fileName,
+				Type:        "header",
+				OperationID: operationID,
+				Issue:       "File not found, using example data from Swagger JSON",
+			})
+		}
+
+		return nil
+	}
+
+	// Read the file content
+	content, err := readFileContent(filePath)
+	if err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(content) == "" {
+		fmt.Printf("Warning: %s is empty\n", fileName)
+		validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+			File:        fileName,
+			Type:        "header",
+			OperationID: operationID,
+		})
+
+		// Attempt to use example data from Swagger JSON
+		headerValues := make(map[string]string)
+		for _, param := range headerParams {
+			if name, ok := param["name"].(string); ok {
+				if example, ok := param["example"]; ok {
+					headerValues[name] = fmt.Sprintf("%v", example)
+				} else if schema, ok := param["schema"].(map[string]interface{}); ok {
+					if defaultValue, ok := schema["default"]; ok {
+						headerValues[name] = fmt.Sprintf("%v", defaultValue)
+					}
+				}
+			}
+		}
+
+		if len(headerValues) > 0 {
+			fmt.Printf("Using example data from Swagger JSON for header file %s\n", fileName)
+			validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+				File:        fileName,
+				Type:        "header",
+				OperationID: operationID,
+				Issue:       "File empty, using example data from Swagger JSON",
+			})
+		}
+
+		return nil
+	}
+
+	// Parse the file content
+	headerValues := parseYamlManually(content)
+	if len(headerValues) == 0 {
+		fmt.Printf("Warning: Unable to parse content of %s or no headers found\n", fileName)
+		validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+			File:        fileName,
+			Type:        "header",
+			OperationID: operationID,
+			Issue:       "Cannot parse content or no headers found",
+		})
+
+		// Attempt to use example data from Swagger JSON
+		headerValues := make(map[string]string)
+		for _, param := range headerParams {
+			if name, ok := param["name"].(string); ok {
+				if example, ok := param["example"]; ok {
+					headerValues[name] = fmt.Sprintf("%v", example)
+				} else if schema, ok := param["schema"].(map[string]interface{}); ok {
+					if defaultValue, ok := schema["default"]; ok {
+						headerValues[name] = fmt.Sprintf("%v", defaultValue)
+					}
+				}
+			}
+		}
+
+		if len(headerValues) > 0 {
+			fmt.Printf("Using example data from Swagger JSON for header file %s\n", fileName)
+			validationReport.EmptyValues = append(validationReport.EmptyValues, EmptyValue{
+				File:        fileName,
+				Type:        "header",
+				OperationID: operationID,
+				Issue:       "Cannot parse content, using example data from Swagger JSON",
+			})
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+func validateRequestBody(requestBody map[string]interface{}, operationID string, endpoint string, swagger map[string]interface{}, fitnessPath string, validationReport *ValidationReport) error {
+	if requestBody == nil {
+		return nil
+	}
+
+	content, ok := requestBody["content"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	if applicationJSON, ok := content["application/json"].(map[string]interface{}); ok {
+		fmt.Println("Request body: application/json")
+
+		schema, ok := applicationJSON["schema"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		if schemaType, ok := schema["type"].(string); ok && schemaType == "array" {
+			items, ok := schema["items"].(map[string]interface{})
+			if !ok {
+				return nil
+			}
+
+			if ref, ok := items["$ref"].(string); ok {
+				schemaName := filepath.Base(ref)
+				schemaFileName := schemaName + ".json"
+				return validateBodyFile(schemaFileName, operationID, fitnessPath, validationReport, swagger)
+			}
+		} else if ref, ok := schema["$ref"].(string); ok {
+			schemaName := filepath.Base(ref)
+			schemaFileName := schemaName + ".json"
+			return validateBodyFile(schemaFileName, operationID, fitnessPath, validationReport, swagger)
+		}
+	} else if multipartFormData, ok := content["multipart/form-data"].(map[string]interface{}); ok {
+		fmt.Println("Request body: multipart/form-data")
+
+		schema, ok := multipartFormData["schema"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		required, ok := schema["required"].([]interface{})
+		if !ok {
+			return nil
+		}
+
+		for _, field := range required {
+			requiredField, ok := field.(string)
+			if !ok {
+				continue
+			}
+
+			fileName := requiredField + ".json"
+			return validateBodyFile(fileName, operationID, fitnessPath, validationReport, swagger)
+		}
+	}
+
+	return nil
+}
+
+func getBodyData(operationID string, path string, method string, fitnessPath string, swagger map[string]interface{}) string {
+	// Try multiple file naming patterns
+	var bodyFilePath string
+	var content string
+	
+	// Get the endpoint last part for file naming
+	endpointLastPart := filepath.Base(path)
+	
+	// Pattern 1: operationID_endpointLastPart_body.yaml
+	bodyFileName := fmt.Sprintf("%s_%s_body.yaml", operationID, endpointLastPart)
+	bodyFilePath = filepath.Join(fitnessPath, bodyFileName)
+	if _, err := os.Stat(bodyFilePath); err == nil {
+		content, err = readFileContent(bodyFilePath)
+		if err == nil && strings.TrimSpace(content) != "" {
+			return content
+		}
+	}
+	
+	// Pattern 2: operationID_endpointLastPart_body.json
+	bodyFileName = fmt.Sprintf("%s_%s_body.json", operationID, endpointLastPart)
+	bodyFilePath = filepath.Join(fitnessPath, bodyFileName)
+	if _, err := os.Stat(bodyFilePath); err == nil {
+		content, err = readFileContent(bodyFilePath)
+		if err == nil && strings.TrimSpace(content) != "" {
+			return content
+		}
+	}
+	
+	// Pattern 3: operationID_body.yaml
+	bodyFileName = fmt.Sprintf("%s_body.yaml", operationID)
+	bodyFilePath = filepath.Join(fitnessPath, bodyFileName)
+	if _, err := os.Stat(bodyFilePath); err == nil {
+		content, err = readFileContent(bodyFilePath)
+		if err == nil && strings.TrimSpace(content) != "" {
+			return content
+		}
+	}
+	
+	// Pattern 4: operationID_body.json
+	bodyFileName = fmt.Sprintf("%s_body.json", operationID)
+	bodyFilePath = filepath.Join(fitnessPath, bodyFileName)
+	if _, err := os.Stat(bodyFilePath); err == nil {
+		content, err = readFileContent(bodyFilePath)
+		if err == nil && strings.TrimSpace(content) != "" {
+			return content
+		}
+	}
+
+	fmt.Printf("Warning: Body file not found for operationID: %s (tried multiple patterns)\n", operationID)
+
+	// Fallback to example in Swagger JSON - use generic approach
+	if paths, ok := swagger["paths"].(map[string]interface{}); ok {
+		if pathMap, ok := paths[path].(map[string]interface{}); ok {
+			if operation, ok := pathMap[method].(map[string]interface{}); ok {
+				if requestBody, ok := operation["requestBody"].(map[string]interface{}); ok {
+					if content, ok := requestBody["content"].(map[string]interface{}); ok {
+						if applicationJSON, ok := content["application/json"].(map[string]interface{}); ok {
+							if examples, ok := applicationJSON["examples"].(map[string]interface{}); ok {
+								// Try to get any example
+								for _, example := range examples {
+									if exampleMap, ok := example.(map[string]interface{}); ok {
+										if value, ok := exampleMap["value"]; ok {
+											exampleBody, err := json.Marshal(value)
+											if err != nil {
+												fmt.Printf("Error marshaling example body: %v\n", err)
+												return "null"
+											}
+											return string(exampleBody)
+										}
+									}
+								}
+							}
+							// If no examples, try schema
+							if schema, ok := applicationJSON["schema"].(map[string]interface{}); ok {
+								if example, ok := schema["example"]; ok {
+									exampleBody, err := json.Marshal(example)
+									if err != nil {
+										fmt.Printf("Error marshaling schema example: %v\n", err)
+										return "null"
+									}
+									return string(exampleBody)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Default to null if no file or example is found
+	return "null"
+}
+
+func validateParameters(parameters []interface{}, operationID string, endpoint string, fitnessPath string, validationReport *ValidationReport, swagger map[string]interface{}) error {
+	queryParams := []map[string]interface{}{}
+	headerParams := []map[string]interface{}{}
+
+	for _, param := range parameters {
+		if p, ok := param.(map[string]interface{}); ok {
+			if in, ok := p["in"].(string); ok {
+				switch in {
+				case "query":
+					queryParams = append(queryParams, p)
+				case "header":
+					headerParams = append(headerParams, p)
+				}
+			}
+		}
+	}
+
+	endpointLastPart := filepath.Base(endpoint)
+
+	if len(queryParams) > 0 {
+		queryParamNames := make([]string, 0, len(queryParams))
+		for _, p := range queryParams {
+			if name, ok := p["name"].(string); ok {
+				queryParamNames = append(queryParamNames, name)
+			}
+		}
+
+		endpointDetails := validationReport.Endpoints[operationID]
+		endpointDetails.QueryParams = queryParamNames
+		validationReport.Endpoints[operationID] = endpointDetails
+
+		queryParamFileName := fmt.Sprintf("%s_%s_path.yaml", operationID, endpointLastPart)
+		queryFilePath := filepath.Join(fitnessPath, queryParamFileName)
+
+		// Check if file exists - if not, use Swagger examples as fallback
+		if !fileExists(queryFilePath) {
+			fmt.Printf("⚠️  File not found: %s, using Swagger examples as fallback\n", queryParamFileName)
+			// Use Swagger examples directly instead of creating file
+			if err := validateParameterFileWithSwaggerFallback(queryParamFileName, queryParams, "query", operationID, fitnessPath, validationReport, swagger); err != nil {
+				return err
+			}
+		} else {
+			// Keep existing validation logic unchanged for existing files
+			if err := validateParameterFile(queryParamFileName, queryParams, "query", operationID, fitnessPath, validationReport, swagger); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Keep existing header logic unchanged
+	if len(headerParams) > 0 {
+		headerParamNames := make([]string, 0, len(headerParams))
+		for _, p := range headerParams {
+			if name, ok := p["name"].(string); ok {
+				headerParamNames = append(headerParamNames, name)
+			}
+		}
+
+		endpointDetails := validationReport.Endpoints[operationID]
+		endpointDetails.HeaderParams = headerParamNames
+		validationReport.Endpoints[operationID] = endpointDetails
+
+		headerFilePatterns := []string{
+			fmt.Sprintf("%s_%s_header.yaml", operationID, endpointLastPart),
+			fmt.Sprintf("%s_%s_headers.yaml", operationID, endpointLastPart),
+			fmt.Sprintf("%s_header.yaml", operationID),
+			fmt.Sprintf("%s_headers.yaml", operationID),
+		}
+
+		var foundHeaderFile string
+		for _, pattern := range headerFilePatterns {
+			headerFilePath := filepath.Join(fitnessPath, pattern)
+			if fileExists(headerFilePath) {
+				foundHeaderFile = pattern
+				break
+			}
+		}
+
+		if foundHeaderFile != "" {
+			if err := validateHeaders(foundHeaderFile, headerParams, operationID, fitnessPath, validationReport, swagger); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("⚠️  Header file not found, using Swagger examples as fallback for operation: %s\n", operationID)
+			// Use Swagger examples directly instead of creating file
+			if err := validateHeadersWithSwaggerFallback(headerParams, operationID, validationReport, swagger); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateParameterFileWithSwaggerFallback(fileName string, expectedParams []map[string]interface{}, paramType string, operationID string, fitnessPath string, validationReport *ValidationReport, swagger map[string]interface{}) error {
+	// Extract examples from the CURRENT operation's parameters only
+	swaggerParams := make(map[string]string)
+	foundExamples := false
+
+	for _, param := range expectedParams {
+		if name, ok := param["name"].(string); ok {
+			var value string = ""
+			hasExample := false
+
+			// Extract example from THIS specific parameter only (not from other operations)
+			if example, exists := param["example"]; exists {
+				value = fmt.Sprintf("%v", example)
+				hasExample = true
+				foundExamples = true
+			} else if schema, exists := param["schema"].(map[string]interface{}); exists {
+				if defaultVal, exists := schema["default"]; exists {
+					value = fmt.Sprintf("%v", defaultVal)
+					hasExample = true
+					foundExamples = true
+				} else if example, exists := schema["example"]; exists {
+					value = fmt.Sprintf("%v", example)
+					hasExample = true
+					foundExamples = true
+				}
+			}
+
+			// Only add to swaggerParams if this specific parameter has an example
+			if hasExample {
+				swaggerParams[name] = value
+			}
+		}
+	}
+
+	// If NO examples found in the current operation's parameters, report as missing
+	if !foundExamples || len(swaggerParams) == 0 {
+		fmt.Printf("❌ No Swagger examples found for %s parameters in operation: %s\n", paramType, operationID)
+		missingFile := MissingFile{
+			File:        fileName,
+			Type:        paramType,
+			OperationID: operationID,
+		}
+		validationReport.MissingFiles = append(validationReport.MissingFiles, missingFile)
+		return nil // Don't fail, just log as missing
+	}
+
+	fmt.Printf("✅ Using Swagger examples for %s parameters in operation: %s\n", paramType, operationID)
+	return nil
+}
+
+// New function to validate headers using Swagger examples as fallback (no file creation)
+func validateHeadersWithSwaggerFallback(expectedParams []map[string]interface{}, operationID string, validationReport *ValidationReport, swagger map[string]interface{}) error {
+	// Extract examples from the CURRENT operation's parameters only
+	swaggerHeaders := make(map[string]string)
+	foundExamples := false
+	
+	for _, param := range expectedParams {
+		if name, ok := param["name"].(string); ok {
+			var value string = ""
+			hasExample := false
+			
+			// Extract example from THIS specific parameter only (not from other operations)
+			if example, exists := param["example"]; exists {
+				value = fmt.Sprintf("%v", example)
+				hasExample = true
+				foundExamples = true
+			} else if schema, exists := param["schema"].(map[string]interface{}); exists {
+				if defaultVal, exists := schema["default"]; exists {
+					value = fmt.Sprintf("%v", defaultVal)
+					hasExample = true
+					foundExamples = true
+				} else if example, exists := schema["example"]; exists {
+					value = fmt.Sprintf("%v", example)
+					hasExample = true
+					foundExamples = true
+				}
+			}
+			
+			// Only add to swaggerHeaders if this specific parameter has an example
+			if hasExample {
+				swaggerHeaders[name] = value
+			}
+		}
+	}
+	
+	// If NO examples found in the current operation's parameters, report as missing
+	if !foundExamples || len(swaggerHeaders) == 0 {
+		fmt.Printf("❌ No Swagger examples found for header parameters in operation: %s\n", operationID)
+		missingFile := MissingFile{
+			File:        fmt.Sprintf("%s_headers.yaml", operationID),
+			Type:        "header",
+			OperationID: operationID,
+		}
+		validationReport.MissingFiles = append(validationReport.MissingFiles, missingFile)
+		return nil // Don't fail, just log as missing
+	}
+	
+	fmt.Printf("✅ Using Swagger examples for header parameters in operation: %s\n", operationID)
+	return nil
+}
+
+
+// New function to generate query param file from Swagger examples in YAML format
+func generateQueryParamFileFromSwagger(filePath string, queryParams []map[string]interface{}, operationID string, swagger map[string]interface{}) error {
+	var parametersList []map[string]interface{}
+	hasExamples := false
+	
+	for _, param := range queryParams {
+		if name, ok := param["name"].(string); ok {
+			var value interface{}
+			found := false
+			
+			// Extract example from Swagger JSON format
+			if example, exists := param["example"]; exists {
+				value = example
+				found = true
+				hasExamples = true
+			} else if schema, exists := param["schema"].(map[string]interface{}); exists {
+				if defaultVal, exists := schema["default"]; exists {
+					value = defaultVal
+					found = true
+					hasExamples = true
+				} else if example, exists := schema["example"]; exists {
+					value = example
+					found = true
+					hasExamples = true
+				}
+			}
+			
+			if found {
+				// Create YAML structure that parseYamlManually expects
+				parametersList = append(parametersList, map[string]interface{}{
+					"name":  name,
+					"value": fmt.Sprintf("%v", value), // Convert JSON value to string for YAML
+				})
+			}
+		}
+	}
+	
+	if !hasExamples {
+		return fmt.Errorf("no examples or default values found in Swagger specification")
+	}
+	
+	// Create the nested YAML structure that parseYamlManually expects
+	yamlStructure := map[string]interface{}{
+		"parameters": map[string]interface{}{
+			"parameter": parametersList,
+		},
+	}
+	
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+	
+	yamlData, err := yaml.Marshal(yamlStructure)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %v", err)
+	}
+	
+	if err := ioutil.WriteFile(filePath, yamlData, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %v", err)
+	}
+	
+	return nil
+}
+
+// New function to generate header file from Swagger examples in YAML format
+func generateHeaderFileFromSwagger(filePath string, headerParams []map[string]interface{}, operationID string, swagger map[string]interface{}) error {
+	var headersList []map[string]interface{}
+	hasExamples := false
+	
+	for _, param := range headerParams {
+		if name, ok := param["name"].(string); ok {
+			var value interface{}
+			found := false
+			
+			// Extract example from Swagger JSON format
+			if example, exists := param["example"]; exists {
+				value = example
+				found = true
+				hasExamples = true
+			} else if schema, exists := param["schema"].(map[string]interface{}); exists {
+				if defaultVal, exists := schema["default"]; exists {
+					value = defaultVal
+					found = true
+					hasExamples = true
+				} else if example, exists := schema["example"]; exists {
+					value = example
+					found = true
+					hasExamples = true
+				}
+			}
+			
+			if found {
+				// Create YAML structure that parseYamlManually expects
+				headersList = append(headersList, map[string]interface{}{
+					"name":  name,
+					"value": fmt.Sprintf("%v", value), // Convert JSON value to string for YAML
+				})
+			}
+		}
+	}
+	
+	if !hasExamples {
+		return fmt.Errorf("no examples or default values found in Swagger specification")
+	}
+	
+	// Create the nested YAML structure that parseYamlManually expects
+	yamlStructure := map[string]interface{}{
+		"headers": map[string]interface{}{
+			"header": headersList,
+		},
+	}
+	
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+	
+	yamlData, err := yaml.Marshal(yamlStructure)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %v", err)
+	}
+	
+	if err := ioutil.WriteFile(filePath, yamlData, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %v", err)
+	}
+	
+	return nil
+}
+
+// generateQueryParamFile creates a YAML file with query parameters using Swagger examples
+func generateQueryParamFile(filePath string, queryParams []map[string]interface{}, operationID string, swagger map[string]interface{}) error {
+	queryData := make(map[string]interface{})
+	
+	for _, param := range queryParams {
+		if name, ok := param["name"].(string); ok {
+			if example, exists := param["example"]; exists {
+				queryData[name] = example
+			} else if schema, exists := param["schema"].(map[string]interface{}); exists {
+				if defaultVal, exists := schema["default"]; exists {
+					queryData[name] = defaultVal
+				} else if example, exists := schema["example"]; exists {
+					queryData[name] = example
+				} else {
+					return fmt.Errorf("no example found for parameter %s", name)
+				}
+			} else {
+				return fmt.Errorf("no example found for parameter %s", name)
+			}
+		}
+	}
+	
+	if len(queryData) == 0 {
+		return fmt.Errorf("no parameters with examples found")
+	}
+	
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	
+	yamlData, err := yaml.Marshal(queryData)
+	if err != nil {
+		return err
+	}
+	
+	return ioutil.WriteFile(filePath, yamlData, 0644)
+}
+
+// generateHeaderFile creates a YAML file with header parameters using Swagger examples
+func generateHeaderFile(filePath string, headerParams []map[string]interface{}, operationID string, swagger map[string]interface{}) error {
+	headerData := make(map[string]interface{})
+	hasExamples := false
+	
+	for _, param := range headerParams {
+		if name, ok := param["name"].(string); ok {
+			// Try to get example from parameter
+			if example, exists := param["example"]; exists {
+				headerData[name] = example
+				hasExamples = true
+			} else if schema, exists := param["schema"].(map[string]interface{}); exists {
+				// Try to get default value from schema
+				if defaultVal, exists := schema["default"]; exists {
+					headerData[name] = defaultVal
+					hasExamples = true
+				} else if example, exists := schema["example"]; exists {
+					headerData[name] = example
+					hasExamples = true
+				}
+			}
+		}
+	}
+	
+	// If no examples found, return error
+	if !hasExamples {
+		return fmt.Errorf("no examples or default values found in Swagger specification")
+	}
+	
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+	
+	// Write YAML file
+	yamlData, err := yaml.Marshal(headerData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %v", err)
+	}
+	
+	if err := ioutil.WriteFile(filePath, yamlData, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %v", err)
+	}
+	
+	return nil
+}
+
+// Part 3: validateSwagger Function
+func validateSwagger(swagger map[string]interface{}, fitnessPath string, validationReport *ValidationReport) error {
+	servers, ok := swagger["servers"].([]interface{})
+	if !ok || len(servers) == 0 {
+		validationReport.MissingServerURL = true
+		fmt.Println("Warning: Missing server URL in Swagger file")
+	} else {
+		serverMap, ok := servers[0].(map[string]interface{})
+		if !ok {
+			validationReport.MissingServerURL = true
+			fmt.Println("Warning: Missing server URL in Swagger file")
+		} else {
+			if _, ok := serverMap["url"].(string); !ok {
+				validationReport.MissingServerURL = true
+				fmt.Println("Warning: Missing server URL in Swagger file")
+			}
+		}
+	}
+
+	paths, ok := swagger["paths"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	for endpoint, pathItem := range paths {
+		pathItemMap, ok := pathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		for method, operation := range pathItemMap {
+			operationMap, ok := operation.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			operationID, ok := operationMap["operationId"].(string)
+			if !ok {
+				fmt.Printf("Warning: Missing operationId for %s %s\n", strings.ToUpper(method), endpoint)
+				continue
+			}
+
+			validationReport.Endpoints[operationID] = EndpointDetails{
+				Path:         endpoint,
+				Method:       method,
+				QueryParams:  []string{},
+				HeaderParams: []string{},
+				BodyContent:  nil,
+				Issues:       []Issue{},
+			}
+
+			if parameters, ok := operationMap["parameters"].([]interface{}); ok {
+				if err := validateParameters(parameters, operationID, endpoint, fitnessPath, validationReport, swagger); err != nil {
+					return err
+				}
+			}
+
+			if requestBody, ok := operationMap["requestBody"].(map[string]interface{}); ok {
+				if err := validateRequestBody(requestBody, operationID, endpoint, swagger, fitnessPath, validationReport); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// Part 4: replacePathPlaceholders Function
+func replacePathPlaceholders(path string, parameters []interface{}) string {
+	for _, param := range parameters {
+		if paramMap, ok := param.(map[string]interface{}); ok {
+			// Check if the parameter is in the path
+			if paramMap["in"] == "path" {
+				fmt.Println("Parameter is in path:", paramMap)
+
+				// Extract the name and example value
+				paramName, nameOk := paramMap["name"].(string)
+				exampleValue, exampleOk := paramMap["example"].(string)
+
+				// Replace the placeholder with the example value
+				if nameOk && exampleOk {
+					placeholder := fmt.Sprintf("{%s}", paramName)
+					if strings.Contains(path, placeholder) {
+						fmt.Printf("Replacing placeholder %s with %s\n", placeholder, exampleValue)
+						path = strings.Replace(path, placeholder, exampleValue, -1)
+					} else {
+						fmt.Printf("Placeholder %s not found in path %s\n", placeholder, path)
+					}
+				} else {
+					fmt.Printf("Failed to extract name or example value for parameter: %+v\n", paramMap)
+				}
+			} else {
+				fmt.Printf("Parameter is not in path: %+v\n", paramMap)
+			}
+		}
+	}
+
+	if !strings.Contains(path, "{") {
+		fmt.Println("Path does not contain placeholders:", path)
+	}
+
+	return path
+}
+
+// Part 4: generateK6Script Function
+
+func generateK6Script(swagger map[string]interface{}, validationReport ValidationReport, environment string) (string, error) {
+	if validationReport.MissingServerURL {
+		return "", fmt.Errorf("cannot generate k6 script: Missing server URL in Swagger file")
+	}
+
+	servers, ok := swagger["servers"].([]interface{})
+	if !ok || len(servers) == 0 {
+		return "", fmt.Errorf("cannot generate k6 script: Missing server URL in Swagger file")
+	}
+
+	serverMap, ok := servers[0].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("cannot generate k6 script: Missing server URL in Swagger file")
+	}
+
+	baseURL, ok := serverMap["url"].(string)
+	if !ok {
+		return "", fmt.Errorf("cannot generate k6 script: Missing server URL in Swagger file")
+	}
+
+	k6Code := `import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { htmlReport } from './bundle.js';
+import { Trend } from 'k6/metrics';
+
+export const options = {
+	insecureSkipTLSVerify: true,
+	stages: [
+		{ duration: '1m', target: 1 },
+	],
+};
+
+// Add Trend metrics
+`
+
+	for operationID := range validationReport.Endpoints {
+		k6Code += fmt.Sprintf("const %sTrend = new Trend('%s');\n", operationID, operationID)
+	}
+
+	k6Code += `
+export default function () {
+`
+
+	for operationID, endpointDetails := range validationReport.Endpoints {
+		path := endpointDetails.Path
+		method := endpointDetails.Method
+
+		// Construct base URL
+		urlVariableName := fmt.Sprintf("%s_baseUrl", operationID)
+		queryParamsVariableName := fmt.Sprintf("%s_queryParams", operationID)
+		fullUrlVariableName := fmt.Sprintf("%s_url", operationID)
+		bodyVariableName := fmt.Sprintf("%s_body", operationID)
+		headersVariableName := fmt.Sprintf("%s_headers", operationID)
+		resVariableName := fmt.Sprintf("%s_res", operationID)
+
+		k6Code += fmt.Sprintf("\n\t// %s: %s %s\n", operationID, strings.ToUpper(method), path)
+		k6Code += fmt.Sprintf("\tconst %s = '%s%s';\n", urlVariableName, baseURL, path)
+
+		queryParams := getQueryParams(operationID, endpointDetails.QueryParams, filepath.Join(constants.PathConstantsInstance.VPEConfigPath, "fitness", environment), swagger)
+		queryParamsString := generateQueryParamsString(queryParams)
+		k6Code += fmt.Sprintf("\tconst %s = `%s`;\n", queryParamsVariableName, queryParamsString)
+
+		// Combine base URL and query parameters
+		k6Code += fmt.Sprintf("\tconst %s = %s + %s;\n", fullUrlVariableName, urlVariableName, queryParamsVariableName)
+
+		// Get body data using the helper function
+		bodyContent := getBodyData(operationID, path, method, filepath.Join(constants.PathConstantsInstance.VPEConfigPath, "fitness", environment), swagger)
+		k6Code += fmt.Sprintf("\tconst %s = JSON.stringify(%s);\n", bodyVariableName, bodyContent)
+
+		// Handle headers
+		headersContent := getHeadersContent(operationID, endpointDetails.HeaderParams, filepath.Join(constants.PathConstantsInstance.VPEConfigPath, "fitness", environment), swagger)
+		k6Code += fmt.Sprintf("\tconst %s = %s;\n", headersVariableName, formatAsJSON(headersContent))
+
+		// Construct k6 request - ONLY CHANGE IS HERE
+		switch strings.ToLower(method) {
+		case "post":
+			k6Code += fmt.Sprintf("\tlet %s = http.post(%s, %s, { headers: %s });\n", resVariableName, fullUrlVariableName, bodyVariableName, headersVariableName)
+		case "put":
+			k6Code += fmt.Sprintf("\tlet %s = http.put(%s, %s, { headers: %s });\n", resVariableName, fullUrlVariableName, bodyVariableName, headersVariableName)
+		case "patch":
+			k6Code += fmt.Sprintf("\tlet %s = http.patch(%s, %s, { headers: %s });\n", resVariableName, fullUrlVariableName, bodyVariableName, headersVariableName)
+		case "delete":
+			k6Code += fmt.Sprintf("\tlet %s = http.del(%s, { headers: %s });\n", resVariableName, fullUrlVariableName, headersVariableName)
+		case "get":
+			k6Code += fmt.Sprintf("\tlet %s = http.get(%s, { headers: %s });\n", resVariableName, fullUrlVariableName, headersVariableName)
+		default:
+			// Default to GET for any unrecognized method
+			k6Code += fmt.Sprintf("\tlet %s = http.get(%s, { headers: %s });\n", resVariableName, fullUrlVariableName, headersVariableName)
+		}
+		k6Code += fmt.Sprintf("\t%sTrend.add(%s.timings.waiting);\n", operationID, resVariableName)
+		k6Code += fmt.Sprintf("\tcheck(%s, {\n\t\t'%s_status_200_check': (r) => r.status == 200,\n\t});\n", resVariableName, operationID)
+	}
+
+	// Add handleSummary function at the end
+	k6Code += `}
+
+// Generate HTML Report
+export function handleSummary(data) {
+	return {
+		"default-summary.html": htmlReport(data),
+		"default-summary.json": JSON.stringify(data),
+	};
+}
+`
+
+	return k6Code, nil
+}
+
+// Helper function to format a map as JSON
+func formatAsJSON(data map[string]string) string {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return "{}"
+	}
+	return string(jsonData)
+}
+
+// Helper function to get query parameters content
+func getQueryParams(operationID string, queryParams []string, fitnessPath string, swagger map[string]interface{}) map[string]string {
+	paramsContent := make(map[string]string)
+
+	// Get endpoint path for this operationID
+	var endpointLastPart string
+	if paths, ok := swagger["paths"].(map[string]interface{}); ok {
+		for pathKey, pathValue := range paths {
+			if pathMap, ok := pathValue.(map[string]interface{}); ok {
+				for _, methodValue := range pathMap {
+					if operationMap, ok := methodValue.(map[string]interface{}); ok {
+						if opID, exists := operationMap["operationId"].(string); exists && opID == operationID {
+							endpointLastPart = filepath.Base(pathKey)
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Try multiple patterns for parameter files
+	patterns := []string{
+		fmt.Sprintf("%s_path.yaml", operationID),
+		fmt.Sprintf("%s_params.yaml", operationID),
+	}
+	
+	if endpointLastPart != "" {
+		patterns = append(patterns, 
+			fmt.Sprintf("%s_%s_path.yaml", operationID, endpointLastPart),
+			fmt.Sprintf("%s_%s_params.yaml", operationID, endpointLastPart),
+		)
+	}
+
+	// Try each pattern
+	var fileContent string
+	for _, pattern := range patterns {
+		paramFilePath := filepath.Join(fitnessPath, pattern)
+		if fileExists(paramFilePath) {
+			content, err := readFileContent(paramFilePath)
+			if err == nil && strings.TrimSpace(content) != "" {
+				fileContent = content
+				fmt.Printf("Found parameter file: %s\n", pattern)
+				break
+			}
+		}
+	}
+
+	if fileContent != "" {
+		parsedParams := parseYamlManually(fileContent)
+		for _, param := range queryParams {
+			if value, ok := parsedParams[param]; ok && strings.TrimSpace(value) != "" {
+				paramsContent[param] = value
+			}
+		}
+	}
+
+	// Fallback to Swagger examples if file values are missing
+	for _, param := range queryParams {
+		if _, exists := paramsContent[param]; !exists {
+			if swaggerParam, ok := getSwaggerParamExample(param, swagger); ok {
+				paramsContent[param] = swaggerParam
+			} else {
+				paramsContent[param] = "example_value" // Default fallback
+			}
+		}
+	}
+
+	return paramsContent
+}
+
+// Helper function to generate query parameters string
+func generateQueryParamsString(params map[string]string) string {
+	var queryParams []string
+	for key, value := range params {
+		queryParams = append(queryParams, fmt.Sprintf("%s=%s", key, value))
+	}
+	return "?" + strings.Join(queryParams, "&")
+}
+
+// Helper function to get example value from Swagger
+func getSwaggerParamExample(paramName string, swagger map[string]interface{}) (string, bool) {
+	paths, ok := swagger["paths"].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+
+	for _, pathItem := range paths {
+		pathItemMap, ok := pathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		for _, operation := range pathItemMap {
+			operationMap, ok := operation.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			parameters, ok := operationMap["parameters"].([]interface{})
+			if !ok {
+				continue
+			}
+
+			for _, param := range parameters {
+				paramMap, ok := param.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				name, ok := paramMap["name"].(string)
+				if !ok || name != paramName {
+					continue
+				}
+
+				if example, ok := paramMap["example"]; ok {
+					return fmt.Sprintf("%v", example), true
+				}
+			}
+		}
+	}
+
+	return "", false
+}
+
+func getHeadersContent(operationID string, headerParams []string, fitnessPath string, swagger map[string]interface{}) map[string]string {
+	headersContent := make(map[string]string)
+
+	// Try multiple file naming patterns to find the header file
+	var headersFilePath string
+	var fileContent string
+	var err error
+
+	// Get endpoint path for this operationID
+	var endpointLastPart string
+	if paths, ok := swagger["paths"].(map[string]interface{}); ok {
+		for pathKey, pathValue := range paths {
+			if pathMap, ok := pathValue.(map[string]interface{}); ok {
+				for _, methodValue := range pathMap {
+					if operationMap, ok := methodValue.(map[string]interface{}); ok {
+						if opID, exists := operationMap["operationId"].(string); exists && opID == operationID {
+							endpointLastPart = filepath.Base(pathKey)
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Try multiple patterns for header files - both "header" and "headers"
+	patterns := []string{
+		fmt.Sprintf("%s_header.yaml", operationID),
+		fmt.Sprintf("%s_headers.yaml", operationID),
+	}
+
+	if endpointLastPart != "" {
+		patterns = append(patterns,
+			fmt.Sprintf("%s_%s_header.yaml", operationID, endpointLastPart),
+			fmt.Sprintf("%s_%s_headers.yaml", operationID, endpointLastPart),
+		)
+	}
+
+	// Try each pattern
+	for _, pattern := range patterns {
+		headersFilePath = filepath.Join(fitnessPath, pattern)
+		if fileExists(headersFilePath) {
+			fileContent, err = readFileContent(headersFilePath)
+			if err == nil && strings.TrimSpace(fileContent) != "" {
+				fmt.Printf("Found header file: %s\n", pattern)
+				break
+			}
+		}
+	}
+
+	// If still no file found, try to find any file that starts with operationID and contains header/headers
+	if fileContent == "" {
+		files, err := ioutil.ReadDir(fitnessPath)
+		if err == nil {
+			for _, file := range files {
+				if !file.IsDir() && strings.HasPrefix(file.Name(), operationID) {
+					fileName := file.Name()
+					// Check for both _header.yaml and _headers.yaml patterns
+					if (strings.Contains(fileName, "_header.yaml") || strings.Contains(fileName, "_headers.yaml")) {
+						headersFilePath = filepath.Join(fitnessPath, fileName)
+						fileContent, err = readFileContent(headersFilePath)
+						if err == nil && strings.TrimSpace(fileContent) != "" {
+							fmt.Printf("Found header file: %s\n", fileName)
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if fileContent != "" {
+		parsedHeaders := parseYamlManually(fileContent)
+		if len(parsedHeaders) > 0 {
+			for _, header := range headerParams {
+				if value, ok := parsedHeaders[header]; ok && strings.TrimSpace(value) != "" {
+					headersContent[header] = value
+				}
+			}
+		} else {
+			fmt.Printf("Debug: Parsed headers are empty for file %s\n", headersFilePath)
+		}
+	} else {
+		fmt.Printf("Headers file not found for operationID: %s\n", operationID)
+	}
+
+	// Fallback to Swagger examples if file values are missing
+	for _, header := range headerParams {
+		if _, exists := headersContent[header]; !exists {
+			if swaggerHeader, ok := getSwaggerHeaderExample(header, swagger); ok {
+				headersContent[header] = swaggerHeader
+			} else {
+				headersContent[header] = "example_value" // Default fallback
+			}
+		}
+	}
+
+	return headersContent
+}
+
+// Helper function to get example value from Swagger for headers
+func getSwaggerHeaderExample(headerName string, swagger map[string]interface{}) (string, bool) {
+	paths, ok := swagger["paths"].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+
+	for _, pathItem := range paths {
+		pathItemMap, ok := pathItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		for _, operation := range pathItemMap {
+			operationMap, ok := operation.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			parameters, ok := operationMap["parameters"].([]interface{})
+			if !ok {
+				continue
+			}
+
+			for _, param := range parameters {
+				paramMap, ok := param.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				name, ok := paramMap["name"].(string)
+				if !ok || name != headerName {
+					continue
+				}
+
+				if example, ok := paramMap["example"]; ok {
+					return fmt.Sprintf("%v", example), true
+				}
+			}
+		}
+	}
+
+	return "", false
+}
+
+// Helper function to get query parameters content
+func getParamsContent(operationID string, queryParams []string, fitnessPath string, swagger map[string]interface{}) map[string]string {
+	paramsContent := make(map[string]string)
+
+	// Read parameters from the file
+	paramFilePath := filepath.Join(fitnessPath, fmt.Sprintf("%s_params.yaml", operationID))
+	if fileExists(paramFilePath) {
+		fileContent, err := readFileContent(paramFilePath)
+		if err == nil {
+			parsedParams := parseYamlManually(fileContent)
+			for _, param := range queryParams {
+				if value, ok := parsedParams[param]; ok && strings.TrimSpace(value) != "" {
+					paramsContent[param] = value
+				}
+			}
+		}
+	}
+
+	// Fallback to Swagger examples if file values are missing
+	for _, param := range queryParams {
+		if _, exists := paramsContent[param]; !exists {
+			if swaggerParam, ok := getSwaggerParamExample(param, swagger); ok {
+				paramsContent[param] = swaggerParam
+			} else {
+				paramsContent[param] = "example_value" // Default fallback
+			}
+		}
+	}
+
+	return paramsContent
+}
+
+// Part 5: generateReport, validateSwaggerAndFiles, and main Functions
+func GenerateReport(validationReport ValidationReport) {
+	fmt.Println("===========================================")
+	fmt.Println("           VALIDATION REPORT")
+	fmt.Println("===========================================")
+
+	if validationReport.MissingServerURL {
+		fmt.Println("❌ Server URL is missing in the Swagger file")
+	}
+
+	if len(validationReport.MissingFiles) > 0 {
+		fmt.Println("\n❌ Missing files:")
+		for _, item := range validationReport.MissingFiles {
+			fmt.Printf("   - %s (%s parameter for operation: %s)\n", item.File, item.Type, item.OperationID)
+		}
+	}
+
+	if len(validationReport.EmptyValues) > 0 {
+		fmt.Println("\n⚠️  Empty or problematic files:")
+		for _, item := range validationReport.EmptyValues {
+			fmt.Printf("   - %s (%s for operation: %s)", item.File, item.Type, item.OperationID)
+			if item.Issue != "" {
+				fmt.Printf(" - %s", item.Issue)
+			}
+			fmt.Println()
+		}
+	}
+
+	fmt.Println("\n📋 Endpoints found:")
+	for operationID, details := range validationReport.Endpoints {
+		fmt.Printf("   - %s (%s %s)\n", operationID, strings.ToUpper(details.Method), details.Path)
+
+		if len(details.QueryParams) > 0 {
+			// fmt.Println("     Query parameters:", strings.Join(details.QueryParams, ", "))
+		}
+
+		if len(details.HeaderParams) > 0 {
+			// fmt.Println("     Header parameters:", strings.Join(details.HeaderParams, ", "))
+		}
+
+		if len(details.Issues) > 0 {
+			fmt.Println("     Issues found:")
+			for _, issue := range details.Issues {
+				if len(issue.MissingParameters) > 0 {
+					fmt.Printf("       File %s is missing parameters: %s\n", issue.File, strings.Join(issue.MissingParameters, ", "))
+				}
+				if len(issue.EmptyParameters) > 0 {
+					fmt.Printf("       File %s has empty parameters: %s\n", issue.File, strings.Join(issue.EmptyParameters, ", "))
+				}
+				if len(issue.MissingRequiredProperties) > 0 {
+					fmt.Printf("       File %s is missing required properties: %s\n", issue.File, strings.Join(issue.MissingRequiredProperties, ", "))
+				}
+				if len(issue.TypeValidationErrors) > 0 {
+					fmt.Printf("       File %s has type validation errors: %s\n", issue.File, strings.Join(issue.TypeValidationErrors, ", "))
+				}
+				if issue.Issue != "" {
+					fmt.Printf("       File %s: %s\n", issue.File, issue.Issue)
+				}
+			}
+		}
+	}
+
+	hasIssues := validationReport.MissingServerURL || len(validationReport.MissingFiles) > 0 || len(validationReport.EmptyValues) > 0
+	for _, endpoint := range validationReport.Endpoints {
+		if len(endpoint.Issues) > 0 {
+			hasIssues = true
+			break
+		}
+	}
+
+	fmt.Println("\n===========================================")
+	if hasIssues {
+		fmt.Println("❌ Validation completed with issues")
+	} else {
+		fmt.Println("✅ Validation completed successfully")
+	}
+	fmt.Println("===========================================")
+}
+
+func detectEnvironmentFolders(fitnessPath string) []string {
+	var environmentFolders []string
+
+	files, err := ioutil.ReadDir(fitnessPath)
+	if err != nil {
+		fmt.Println("Error reading directory:", err)
+		return environmentFolders // Return empty slice on error
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			name := file.Name()
+			baseName := filepath.Base(name) // Get the base name of the folder
+
+			// Check for "dev"
+			if strings.Contains(baseName, "dev") {
+				if baseName == "dev" || strings.HasPrefix(baseName, "gt-dev") || strings.HasPrefix(baseName, "sw-dev") {
+					environmentFolders = append(environmentFolders, name)
+				}
+			}
+
+			// Check for "uat"
+			if strings.Contains(baseName, "uat") {
+				if baseName == "uat" || strings.HasPrefix(baseName, "gt-uat") || strings.HasPrefix(baseName, "sw-uat") {
+					environmentFolders = append(environmentFolders, name)
+				}
+			}
+		}
+	}
+
+	return environmentFolders
+}
+
+func ValidateSwaggerAndFiles() error {
+	fitnessFolderPath := constants.PathConstantsInstance.VPEConfigPath
+	if fitnessFolderPath == "" {
+		return fmt.Errorf("please provide folder path as an argument")
+	}
+
+	fmt.Println("Checking folder:", fitnessFolderPath)
+
+	fitnessPath := filepath.Join(fitnessFolderPath, "fitness")
+	if !directoryExists(fitnessPath) {
+		return fmt.Errorf("fitness folder does not exist")
+	}
+
+	// Detect environment folders
+	environmentFolders := detectEnvironmentFolders(fitnessPath)
+	fmt.Println("\nDetected environment folders:", environmentFolders)
+
+	atLeastOneSuccess := false
+	successEnvironments := []string{}
+	failedEnvironments := []string{}
+	failureReasons := make(map[string]string)
+
+	for _, environment := range environmentFolders {
+		fmt.Println("\n===========================================")
+		fmt.Println("         Validating environment:", environment)
+		fmt.Println("===========================================")
+
+		envFitnessPath := filepath.Join(fitnessPath, environment)
+		if !directoryExists(envFitnessPath) {
+			fmt.Printf("Environment folder %s does not exist, skipping.\n", environment)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = "Environment folder does not exist"
+			continue
+		}
+
+		// Search for Swagger file inside the environment folder
+		swaggerFile, err := findSwaggerFile(envFitnessPath)
+		if err != nil {
+			fmt.Printf("Error finding Swagger file in environment %s: %v\n", environment, err)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = fmt.Sprintf("Error finding Swagger file: %v", err)
+			continue
+		}
+
+		if swaggerFile == "" {
+			fmt.Printf("No Swagger/OpenAPI file found in environment %s, skipping.\n", environment)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = "No Swagger/OpenAPI file found"
+			continue
+		}
+
+		fmt.Println("\nFound Swagger/OpenAPI file:", swaggerFile)
+
+		// Read the Swagger content
+		swaggerContent, err := readFileContent(filepath.Join(envFitnessPath, swaggerFile))
+		if err != nil {
+			fmt.Printf("Could not read Swagger file content for environment %s: %v\n", environment, err)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = fmt.Sprintf("Error reading Swagger file: %v", err)
+			continue
+		}
+
+		var swagger map[string]interface{}
+		if err := json.Unmarshal([]byte(swaggerContent), &swagger); err != nil {
+			fmt.Println("JSON parsing failed, attempting to parse as YAML...")
+			if err := yaml.Unmarshal([]byte(swaggerContent), &swagger); err != nil {
+				fmt.Printf("YAML parsing failed for environment %s: %v\n", environment, err)
+				failedEnvironments = append(failedEnvironments, environment)
+				failureReasons[environment] = fmt.Sprintf("YAML parsing failed: %v", err)
+				continue
+			}
+		}
+
+		validationReport := createValidationReport()
+		if err := validateSwagger(swagger, envFitnessPath, &validationReport); err != nil {
+			fmt.Printf("Error validating Swagger for environment %s: %v\n", environment, err)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = fmt.Sprintf("Swagger validation error: %v", err)
+			continue
+		}
+
+		GenerateReport(validationReport)
+
+		hasIssues := validationReport.MissingServerURL || len(validationReport.MissingFiles) > 0 || len(validationReport.EmptyValues) > 0
+		for _, endpoint := range validationReport.Endpoints {
+			if len(endpoint.Issues) > 0 {
+				hasIssues = true
+				break
+			}
+		}
+
+		if !hasIssues {
+			atLeastOneSuccess = true
+			fmt.Println("\nGenerating k6 script for environment:", environment)
+
+			k6Script, err := generateK6Script(swagger, validationReport, environment)
+			if err != nil {
+				fmt.Printf("Error generating k6 script: %v\n", err)
+				failedEnvironments = append(failedEnvironments, environment)
+				failureReasons[environment] = fmt.Sprintf("K6 script generation error: %v", err)
+			} else {
+				k6FolderPath := filepath.Join(fitnessFolderPath, "k6")
+				err := os.MkdirAll(k6FolderPath, os.ModePerm)
+				if err != nil {
+					fmt.Printf("Error creating k6 folder: %v\n", err)
+					return err
+				}
+
+				k6FileName := fmt.Sprintf("vpe-default-k6-swagger_%s.js", environment)
+				k6FilePath := filepath.Join(k6FolderPath, k6FileName)
+
+				err = ioutil.WriteFile(k6FilePath, []byte(k6Script), 0644)
+				if err != nil {
+					fmt.Printf("Error writing k6 script to file: %v\n", err)
+					failedEnvironments = append(failedEnvironments, environment)
+					failureReasons[environment] = fmt.Sprintf("Error writing k6 script to file: %v", err)
+				} else {
+					fmt.Println("✅ Successfully generated k6 script:", k6FileName)
+					successEnvironments = append(successEnvironments, environment)
+				}
+			}
+		} else {
+			fmt.Printf("Skipping k6 script generation for %s due to validation issues.\n", environment)
+			failedEnvironments = append(failedEnvironments, environment)
+			failureReasons[environment] = "Validation issues found"
+		}
+
+		fmt.Println() // Add an empty line for better separation
+	}
+
+	// Create or append to env_vars file only if at least one test script is successfully generated
+	if len(successEnvironments) > 0 {
+		k6FolderPath := filepath.Join(fitnessFolderPath, "k6")
+		err := os.MkdirAll(k6FolderPath, os.ModePerm)
+		if err != nil {
+			fmt.Printf("Error creating k6 folder: %v\n", err)
+			return fmt.Errorf("error creating k6 folder: %v", err)
+		}
+
+		envVarsFileName := filepath.Join(k6FolderPath, "env_vars")
+		envVarsContent := "export testType=default\nexport swagger=true\n"
+
+		if _, err := os.Stat(envVarsFileName); os.IsNotExist(err) {
+			err = ioutil.WriteFile(envVarsFileName, []byte(envVarsContent), 0644)
+			if err != nil {
+				return fmt.Errorf("error creating env_vars file: %v", err)
+			} else {
+				fmt.Println("Successfully created env_vars file inside fitness/k6 folder")
+			}
+		} else {
+			fileBytes, err := os.ReadFile(envVarsFileName)
+			if err != nil {
+				return fmt.Errorf("error reading env_vars file: %v", err)
+			}
+
+			existingContent := string(fileBytes)
+			if !strings.Contains(existingContent, "export testType=default") || !strings.Contains(existingContent, "export swagger=true") {
+				f, err := os.OpenFile(envVarsFileName, os.O_APPEND|os.O_WRONLY, 0644)
+				if err != nil {
+					fmt.Printf("Error opening env_vars file: %v\n", err)
+				} else {
+					defer f.Close()
+					if _, err := f.WriteString(envVarsContent); err != nil {
+						fmt.Printf("Error appending to env_vars file: %v\n", err)
+					} else {
+						fmt.Println("Successfully appended to env_vars file inside fitness/k6 folder")
+					}
+				}
+			} else {
+				fmt.Println("env_vars file inside fitness/k6 folder already contains the required exports.")
+			}
+		}
+	}
+
+	fmt.Println("\n===========================================")
+	fmt.Println("                 SUMMARY")
+	fmt.Println("===========================================")
+
+	if len(successEnvironments) > 0 {
+		fmt.Println("\n✅ Successfully generated k6 scripts for:")
+		for _, env := range successEnvironments {
+			fmt.Println("   -", env)
+		}
+	}
+
+	if len(failedEnvironments) > 0 {
+		fmt.Println("\n❌ Failed to generate k6 scripts for:")
+		for _, env := range failedEnvironments {
+			fmt.Printf("   - %s: %s\n", env, failureReasons[env])
+		}
+	}
+
+	if !atLeastOneSuccess {
+		return fmt.Errorf("no k6 scripts were successfully generated")
+	}
+
+	return nil
+}
+
+func main() {
+	if err := ValidateSwaggerAndFiles(); err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+}
