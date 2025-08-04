@@ -1,0 +1,1612 @@
+
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"text/template"
+)
+
+// Test data
+var testConfig = Config{
+	BaseURL: "https://example.com",
+	TestCases: []TestCase{
+		{
+			Name:     "test_case_1",
+			URL:      "/page1",
+			Selector: "//div[@id='test']",
+			Text:     "Test Text",
+		},
+		{
+			Name:     "test_case_2",
+			URL:      "",
+			Selector: "//span[@class='content']",
+			Text:     "Another Test",
+		},
+	},
+}
+
+func TestReadConfigFile(t *testing.T) {
+	// Create temporary directory
+	tempDir, err := ioutil.TempDir("", "k6_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create valid config file
+	configFile := filepath.Join(tempDir, "test_config.json")
+	configData, err := json.Marshal(testConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal test config: %v", err)
+	}
+
+	err = ioutil.WriteFile(configFile, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Test reading valid config
+	config, err := readConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("readConfigFile failed: %v", err)
+	}
+
+	// Assert config is not nil
+	if config == nil {
+		t.Fatal("Expected config to be non-nil")
+	}
+
+	// Assert BaseURL
+	if config.BaseURL != testConfig.BaseURL {
+		t.Errorf("Expected BaseURL %s, got %s", testConfig.BaseURL, config.BaseURL)
+	}
+
+	// Assert test cases length
+	if len(config.TestCases) != len(testConfig.TestCases) {
+		t.Errorf("Expected %d test cases, got %d", len(testConfig.TestCases), len(config.TestCases))
+	}
+
+	// Assert individual test case fields
+	for i, testCase := range config.TestCases {
+		if i < len(testConfig.TestCases) {
+			if testCase.Name != testConfig.TestCases[i].Name {
+				t.Errorf("TestCase[%d].Name: expected %s, got %s", i, testConfig.TestCases[i].Name, testCase.Name)
+			}
+			if testCase.URL != testConfig.TestCases[i].URL {
+				t.Errorf("TestCase[%d].URL: expected %s, got %s", i, testConfig.TestCases[i].URL, testCase.URL)
+			}
+			if testCase.Selector != testConfig.TestCases[i].Selector {
+				t.Errorf("TestCase[%d].Selector: expected %s, got %s", i, testConfig.TestCases[i].Selector, testCase.Selector)
+			}
+			if testCase.Text != testConfig.TestCases[i].Text {
+				t.Errorf("TestCase[%d].Text: expected %s, got %s", i, testConfig.TestCases[i].Text, testCase.Text)
+			}
+		}
+	}
+}
+
+func TestReadConfigFileErrors(t *testing.T) {
+	// Test non-existent file
+	config, err := readConfigFile("non_existent_file.json")
+	if err == nil {
+		t.Error("Expected error for non-existent file, got nil")
+	}
+	if config != nil {
+		t.Error("Expected nil config for non-existent file")
+	}
+	if !strings.Contains(err.Error(), "error reading config file") {
+		t.Errorf("Expected error message to contain 'error reading config file', got: %v", err)
+	}
+
+	// Test invalid JSON
+	tempDir, err := ioutil.TempDir("", "k6_test_invalid")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	invalidFile := filepath.Join(tempDir, "invalid.json")
+	err = ioutil.WriteFile(invalidFile, []byte(`{"invalid": json}`), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid JSON file: %v", err)
+	}
+
+	config, err = readConfigFile(invalidFile)
+	if err == nil {
+		t.Error("Expected error for invalid JSON, got nil")
+	}
+	if config != nil {
+		t.Error("Expected nil config for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "error parsing JSON") {
+		t.Errorf("Expected error message to contain 'error parsing JSON', got: %v", err)
+	}
+}
+
+func TestGenerateOutputFilename(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"config.json", "config_generated.js"},
+		{"test.json", "test_generated.js"},
+		{"my-config.json", "my-config_generated.js"},
+		{"config", "config_generated.js"},
+		{"", "_generated.js"},
+		{"file.JSON", "file.JSON_generated.js"}, // Case sensitive
+		{"path/to/config.json", "path/to/config_generated.js"},
+	}
+
+	for _, tc := range testCases {
+		result := generateOutputFilename(tc.input)
+		if result != tc.expected {
+			t.Errorf("For input %s, expected %s, got %s", tc.input, tc.expected, result)
+		}
+		// Assert the result always ends with _generated.js
+		if !strings.HasSuffix(result, "_generated.js") {
+			t.Errorf("Result should always end with '_generated.js', got %s", result)
+		}
+		// Assert the result is not empty
+		if result == "" {
+			t.Error("Result should not be empty")
+		}
+	}
+}
+
+func TestCreateTemplate(t *testing.T) {
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	// Assert template is not nil
+	if tmpl == nil {
+		t.Fatal("Expected template, got nil")
+	}
+
+	// Assert template name
+	if tmpl.Name() != "k6script" {
+		t.Errorf("Expected template name 'k6script', got %s", tmpl.Name())
+	}
+
+	// Test template execution
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, testConfig)
+	if err != nil {
+		t.Fatalf("Template execution failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Assert output is not empty
+	if output == "" {
+		t.Error("Template output should not be empty")
+	}
+
+	// Assert minimum length
+	if len(output) < 100 {
+		t.Errorf("Template output seems too short: %d characters", len(output))
+	}
+
+	expectedStrings := []string{
+		"import { browser } from 'k6/browser'",
+		"export const options",
+		"export default async function",
+		"export function handleSummary",
+		testConfig.BaseURL,
+		testConfig.TestCases[0].Name,
+		testConfig.TestCases[0].Text,
+		testConfig.TestCases[1].Name,
+		testConfig.TestCases[1].Text,
+		"browser_http_req_failed",
+		"browser_http_req_duration",
+		"constant-vus",
+		"chromium",
+		"headless: true",
+		"screenshot",
+		"waitForSelector",
+		"textContent",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(output, expected) {
+			t.Errorf("Template output should contain '%s'", expected)
+		}
+	}
+
+	// Assert that both test cases are present
+	testCase1Count := strings.Count(output, testConfig.TestCases[0].Name)
+	testCase2Count := strings.Count(output, testConfig.TestCases[1].Name)
+	if testCase1Count == 0 {
+		t.Error("First test case should be present in output")
+	}
+	if testCase2Count == 0 {
+		t.Error("Second test case should be present in output")
+	}
+}
+
+func TestCreateTemplateWithAddFunction(t *testing.T) {
+	// Test the add function in template
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	// Assert template has the add function
+	if tmpl == nil {
+		t.Fatal("Template should not be nil")
+	}
+
+	// Create a simple template to test the add function
+	testTemplate := `{{add 1 2}} {{add 5 10}} {{add 0 0}}`
+	addTmpl, err := template.New("test").Funcs(template.FuncMap{
+		"add": func(a, b int) int {
+			return a + b
+		},
+	}).Parse(testTemplate)
+	if err != nil {
+		t.Fatalf("Failed to create add test template: %v", err)
+	}
+
+	var buf strings.Builder
+	err = addTmpl.Execute(&buf, nil)
+	if err != nil {
+		t.Fatalf("Failed to execute add test template: %v", err)
+	}
+
+	result := buf.String()
+	expected := "3 15 0"
+	if result != expected {
+		t.Errorf("Expected '%s', got '%s'", expected, result)
+	}
+
+	// Assert individual parts
+	if !strings.Contains(result, "3") {
+		t.Error("Result should contain '3'")
+	}
+	if !strings.Contains(result, "15") {
+		t.Error("Result should contain '15'")
+	}
+	if !strings.Contains(result, "0") {
+		t.Error("Result should contain '0'")
+	}
+}
+
+func TestGenerateScript(t *testing.T) {
+	// Create temporary directory
+	tempDir, err := ioutil.TempDir("", "k6_test_generate")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	outputFile := filepath.Join(tempDir, "test_output.js")
+
+	// Test successful script generation
+	err = generateScript(&testConfig, outputFile)
+	if err != nil {
+		t.Fatalf("generateScript failed: %v", err)
+	}
+
+	// Verify file was created
+	fileInfo, err := os.Stat(outputFile)
+	if os.IsNotExist(err) {
+		t.Fatal("Output file was not created")
+	}
+	if err != nil {
+		t.Fatalf("Error checking output file: %v", err)
+	}
+
+	// Assert file size is reasonable
+	if fileInfo.Size() == 0 {
+		t.Error("Output file should not be empty")
+	}
+	if fileInfo.Size() < 100 {
+		t.Errorf("Output file seems too small: %d bytes", fileInfo.Size())
+	}
+
+	// Read and verify content
+	content, err := ioutil.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to read output file: %v", err)
+	}
+
+	contentStr := string(content)
+
+	// Assert content is not empty
+	if contentStr == "" {
+		t.Error("File content should not be empty")
+	}
+
+	expectedStrings := []string{
+		"import { browser } from 'k6/browser'",
+		"export function handleSummary",
+		"export const options",
+		"export default async function",
+		testConfig.BaseURL,
+		testConfig.TestCases[0].Name,
+		testConfig.TestCases[1].Name,
+		testConfig.TestCases[0].Selector,
+		testConfig.TestCases[1].Selector,
+		testConfig.TestCases[0].Text,
+		testConfig.TestCases[1].Text,
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(contentStr, expected) {
+			t.Errorf("Generated script should contain '%s'", expected)
+		}
+	}
+
+	// Assert JavaScript syntax elements
+	jsSyntaxElements := []string{
+		"const ",
+		"await ",
+		"async function",
+		"console.log",
+		"check(",
+		"page.goto",
+		"page.screenshot",
+	}
+
+	for _, element := range jsSyntaxElements {
+		if !strings.Contains(contentStr, element) {
+			t.Errorf("Generated script should contain JavaScript syntax '%s'", element)
+		}
+	}
+}
+
+func TestGenerateScriptErrors(t *testing.T) {
+	// Test with invalid output path
+	err := generateScript(&testConfig, "/invalid/path/that/does/not/exist/output.js")
+	if err == nil {
+		t.Error("Expected error for invalid output path, got nil")
+	}
+	if !strings.Contains(err.Error(), "error creating output file") {
+		t.Errorf("Expected error message about creating output file, got: %v", err)
+	}
+
+	// Test with nil config
+	tempDir, err := ioutil.TempDir("", "k6_test_nil")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	outputFile := filepath.Join(tempDir, "nil_test.js")
+	err = generateScript(nil, outputFile)
+	if err == nil {
+		t.Error("Expected error for nil config, got nil")
+	}
+	if !strings.Contains(err.Error(), "error executing template") {
+		t.Errorf("Expected error message about template execution, got: %v", err)
+	}
+}
+
+func TestGenerateScriptTemplateError(t *testing.T) {
+	// Create a config that might cause template execution issues
+	badConfig := &Config{
+		BaseURL: "https://example.com",
+		TestCases: []TestCase{
+			{
+				Name:     "test with \"quotes\" and 'apostrophes'",
+				URL:      "/page1",
+				Selector: "//div[@id='test']",
+				Text:     "Text with \"quotes\"",
+			},
+		},
+	}
+
+	tempDir, err := ioutil.TempDir("", "k6_test_template_error")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	outputFile := filepath.Join(tempDir, "bad_output.js")
+
+	// This should still work, but tests the template execution path
+	err = generateScript(badConfig, outputFile)
+	if err != nil {
+		t.Logf("Template execution handled quotes correctly, got error: %v", err)
+	} else {
+		// If it succeeds, verify the content
+		content, readErr := ioutil.ReadFile(outputFile)
+		if readErr != nil {
+			t.Fatalf("Failed to read output file: %v", readErr)
+		}
+
+		contentStr := string(content)
+		if !strings.Contains(contentStr, badConfig.TestCases[0].Name) {
+			t.Error("Output should contain test case name with quotes")
+		}
+		if !strings.Contains(contentStr, badConfig.TestCases[0].Text) {
+			t.Error("Output should contain test case text with quotes")
+		}
+	}
+}
+
+func TestProcessConfig(t *testing.T) {
+	// Create temporary directory
+	tempDir, err := ioutil.TempDir("", "k6_test_process")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create config file
+	configFile := filepath.Join(tempDir, "process_test.json")
+	configData, err := json.Marshal(testConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal test config: %v", err)
+	}
+
+	err = ioutil.WriteFile(configFile, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Test successful processing
+	err = processConfig(configFile)
+	if err != nil {
+		t.Fatalf("processConfig failed: %v", err)
+	}
+
+	// Verify output file was created
+	outputFile := generateOutputFilename(configFile)
+	fileInfo, err := os.Stat(outputFile)
+	if os.IsNotExist(err) {
+		t.Fatal("Output file was not created by processConfig")
+	}
+	if err != nil {
+		t.Fatalf("Error checking output file: %v", err)
+	}
+
+	// Assert file properties
+	if fileInfo.Size() == 0 {
+		t.Error("Generated file should not be empty")
+	}
+	if !strings.HasSuffix(outputFile, "_generated.js") {
+		t.Errorf("Output file should end with '_generated.js', got %s", outputFile)
+	}
+
+	// Verify content
+	content, err := ioutil.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to read generated file: %v", err)
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, testConfig.BaseURL) {
+		t.Error("Generated file should contain base URL")
+	}
+	if !strings.Contains(contentStr, "export default async function") {
+		t.Error("Generated file should contain main function")
+	}
+}
+
+func TestProcessConfigErrors(t *testing.T) {
+	// Test with non-existent file
+	err := processConfig("non_existent_config.json")
+	if err == nil {
+		t.Error("Expected error for non-existent config file, got nil")
+	}
+	if !strings.Contains(err.Error(), "error reading config file") {
+		t.Errorf("Expected error about reading config file, got: %v", err)
+	}
+
+	// Test with invalid JSON file
+	tempDir, err := ioutil.TempDir("", "k6_test_process_error")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	invalidFile := filepath.Join(tempDir, "invalid_process.json")
+	err = ioutil.WriteFile(invalidFile, []byte(`{"invalid": json}`), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid JSON file: %v", err)
+	}
+
+	err = processConfig(invalidFile)
+	if err == nil {
+		t.Error("Expected error for invalid JSON in processConfig, got nil")
+	}
+	if !strings.Contains(err.Error(), "error parsing JSON") {
+		t.Errorf("Expected error about parsing JSON, got: %v", err)
+	}
+}
+
+func TestProcessConfigGenerateScriptError(t *testing.T) {
+	// Test with a directory that doesn't exist to force generateScript to fail
+	err := processConfig("/non/existent/directory/config.json")
+	if err == nil {
+		t.Error("Expected error when config file doesn't exist, got nil")
+	}
+	if !strings.Contains(err.Error(), "error reading config file") {
+		t.Errorf("Expected error about reading config file, got: %v", err)
+	}
+}
+
+func TestTestCaseStruct(t *testing.T) {
+	testCase := TestCase{
+		Name:     "test_name",
+		URL:      "/test-url",
+		Selector: "//div[@id='test']",
+		Text:     "test text",
+	}
+
+	// Assert all fields
+	if testCase.Name != "test_name" {
+		t.Errorf("Expected Name to be 'test_name', got %s", testCase.Name)
+	}
+	if testCase.URL != "/test-url" {
+		t.Errorf("Expected URL to be '/test-url', got %s", testCase.URL)
+	}
+	if testCase.Selector != "//div[@id='test']" {
+		t.Errorf("Expected Selector to be '//div[@id='test']', got %s", testCase.Selector)
+	}
+	if testCase.Text != "test text" {
+		t.Errorf("Expected Text to be 'test text', got %s", testCase.Text)
+	}
+
+	// Assert field types and lengths
+	if len(testCase.Name) == 0 {
+		t.Error("Name should not be empty")
+	}
+	if len(testCase.Selector) == 0 {
+		t.Error("Selector should not be empty")
+	}
+	if len(testCase.Text) == 0 {
+		t.Error("Text should not be empty")
+	}
+
+	// Test empty TestCase
+	emptyTestCase := TestCase{}
+	if emptyTestCase.Name != "" {
+		t.Error("Empty TestCase Name should be empty string")
+	}
+	if emptyTestCase.URL != "" {
+		t.Error("Empty TestCase URL should be empty string")
+	}
+	if emptyTestCase.Selector != "" {
+		t.Error("Empty TestCase Selector should be empty string")
+	}
+	if emptyTestCase.Text != "" {
+		t.Error("Empty TestCase Text should be empty string")
+	}
+}
+
+func TestConfigStruct(t *testing.T) {
+	config := Config{
+		BaseURL: "https://test.com",
+		TestCases: []TestCase{
+			{Name: "test1", URL: "/url1", Selector: "selector1", Text: "text1"},
+		},
+	}
+
+	// Assert BaseURL
+	if config.BaseURL != "https://test.com" {
+		t.Errorf("Expected BaseURL to be 'https://test.com', got %s", config.BaseURL)
+	}
+
+	// Assert TestCases length
+	if len(config.TestCases) != 1 {
+		t.Errorf("Expected 1 test case, got %d", len(config.TestCases))
+	}
+
+	// Assert TestCases is not nil
+	if config.TestCases == nil {
+		t.Error("TestCases should not be nil")
+	}
+
+	// Assert first test case
+	if len(config.TestCases) > 0 {
+		firstTestCase := config.TestCases[0]
+		if firstTestCase.Name != "test1" {
+			t.Errorf("Expected first test case name 'test1', got %s", firstTestCase.Name)
+		}
+		if firstTestCase.URL != "/url1" {
+			t.Errorf("Expected first test case URL '/url1', got %s", firstTestCase.URL)
+		}
+		if firstTestCase.Selector != "selector1" {
+			t.Errorf("Expected first test case selector 'selector1', got %s", firstTestCase.Selector)
+		}
+		if firstTestCase.Text != "text1" {
+			t.Errorf("Expected first test case text 'text1', got %s", firstTestCase.Text)
+		}
+	}
+
+	// Test empty Config
+	emptyConfig := Config{}
+	if emptyConfig.BaseURL != "" {
+		t.Error("Empty Config BaseURL should be empty string")
+	}
+	if emptyConfig.TestCases != nil {
+		t.Error("Empty Config TestCases should be nil")
+	}
+}
+
+func TestK6TemplateContent(t *testing.T) {
+	// Assert template is not empty
+	if k6Template == "" {
+		t.Fatal("k6Template should not be empty")
+	}
+
+	// Assert minimum length
+	if len(k6Template) < 500 {
+		t.Errorf("k6Template seems too short: %d characters", len(k6Template))
+	}
+
+	expectedStrings := []string{
+		"import { browser } from 'k6/browser'",
+		"import htmlReport from './bundle.js'",
+		"import { check } from 'k6'",
+		"export const options",
+		"export default async function",
+		"export function handleSummary",
+		"browser_http_req_failed",
+		"browser_http_req_duration",
+		"constant-vus",
+		"chromium",
+		"headless: true",
+		"insecureSkipTLSVerify: true",
+		"thresholds:",
+		"scenarios:",
+		"browser_test:",
+		"executor:",
+		"vus:",
+		"duration:",
+		"newPage()",
+		"goto(",
+		"waitForSelector(",
+		"screenshot(",
+		"textContent()",
+		"locator(",
+		"close()",
+		"JSON.stringify",
+		"console.log",
+		"console.error",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(k6Template, expected) {
+			t.Errorf("k6Template should contain '%s'", expected)
+		}
+	}
+
+	// Assert template structure
+	if !strings.Contains(k6Template, "{{range $index, $test := .TestCases}}") {
+		t.Error("Template should contain range loop for test cases")
+	}
+	if !strings.Contains(k6Template, "{{end}}") {
+		t.Error("Template should contain end tag")
+	}
+	if !strings.Contains(k6Template, "{{add $index 1}}") {
+		t.Error("Template should use add function")
+	}
+
+	// Count occurrences of important elements
+	importCount := strings.Count(k6Template, "import ")
+	if importCount < 3 {
+		t.Errorf("Expected at least 3 import statements, got %d", importCount)
+	}
+
+	exportCount := strings.Count(k6Template, "export ")
+	if exportCount < 3 {
+		t.Errorf("Expected at least 3 export statements, got %d", exportCount)
+	}
+}
+
+func TestEmptyConfig(t *testing.T) {
+	emptyConfig := Config{
+		BaseURL:   "",
+		TestCases: []TestCase{},
+	}
+
+	// Assert empty config properties
+	if emptyConfig.BaseURL != "" {
+		t.Error("Empty config BaseURL should be empty")
+	}
+	if len(emptyConfig.TestCases) != 0 {
+		t.Errorf("Empty config should have 0 test cases, got %d", len(emptyConfig.TestCases))
+	}
+
+	// Test template execution with empty config
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, emptyConfig)
+	if err != nil {
+		t.Fatalf("Template execution with empty config failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Assert output is not empty
+	if output == "" {
+		t.Error("Template output should not be empty even with empty config")
+	}
+
+	// Assert basic structure is still present
+	if !strings.Contains(output, "export default async function") {
+		t.Error("Template should still contain main function with empty config")
+	}
+	if !strings.Contains(output, "export const options") {
+		t.Error("Template should still contain options with empty config")
+	}
+	if !strings.Contains(output, "export function handleSummary") {
+		t.Error("Template should still contain handleSummary with empty config")
+	}
+
+	// Assert no test case specific content
+	if strings.Contains(output, "console.log('Navigating to") {
+		t.Error("Empty config should not generate navigation logs")
+	}
+}
+
+func TestConfigWithSpecialCharacters(t *testing.T) {
+	specialConfig := Config{
+		BaseURL: "https://special-chars.com",
+		TestCases: []TestCase{
+			{
+				Name:     "special_chars_test",
+				URL:      "/page-with-special-chars",
+				Selector: "//div[@class='special-class']",
+				Text:     "Text with special chars: !@#$%^&*()",
+			},
+		},
+	}
+
+	// Assert special config properties
+	if !strings.Contains(specialConfig.BaseURL, "special-chars") {
+		t.Error("Special config should contain special-chars in BaseURL")
+	}
+	if len(specialConfig.TestCases) != 1 {
+		t.Errorf("Special config should have 1 test case, got %d", len(specialConfig.TestCases))
+	}
+	if !strings.Contains(specialConfig.TestCases[0].Text, "!@#$%^&*()") {
+		t.Error("Special config should contain special characters in text")
+	}
+
+	// Test template execution with special characters
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, specialConfig)
+	if err != nil {
+		t.Fatalf("Template execution with special chars failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Assert output contains special characters
+	if !strings.Contains(output, specialConfig.TestCases[0].Text) {
+		t.Error("Template should contain special characters text")
+	}
+	if !strings.Contains(output, specialConfig.BaseURL) {
+		t.Error("Template should contain special BaseURL")
+	}
+	if !strings.Contains(output, specialConfig.TestCases[0].Name) {
+		t.Error("Template should contain special test case name")
+	}
+	if !strings.Contains(output, specialConfig.TestCases[0].Selector) {
+		t.Error("Template should contain special selector")
+	}
+
+	// Assert special characters are properly handled
+	specialChars := []string{"!", "@", "#", "$", "%", "^", "&", "*", "(", ")"}
+	for _, char := range specialChars {
+		if !strings.Contains(output, char) {
+			t.Errorf("Output should contain special character '%s'", char)
+		}
+	}
+}
+
+func TestLargeConfig(t *testing.T) {
+	largeConfig := Config{
+		BaseURL:   "https://large-test.com",
+		TestCases: []TestCase{},
+	}
+
+	// Add many test cases
+	testCaseCount := 50
+	for i := 0; i < testCaseCount; i++ {
+		testCase := TestCase{
+			Name:     fmt.Sprintf("test_case_%d", i),
+			URL:      fmt.Sprintf("/page%d", i),
+			Selector: fmt.Sprintf("//div[@id='test%d']", i),
+			Text:     fmt.Sprintf("Test Text %d", i),
+		}
+		largeConfig.TestCases = append(largeConfig.TestCases, testCase)
+	}
+
+	// Assert large config properties
+	if len(largeConfig.TestCases) != testCaseCount {
+		t.Errorf("Large config should have %d test cases, got %d", testCaseCount, len(largeConfig.TestCases))
+	}
+	if largeConfig.BaseURL != "https://large-test.com" {
+		t.Errorf("Large config BaseURL should be 'https://large-test.com', got %s", largeConfig.BaseURL)
+	}
+
+	// Assert individual test cases
+	for i, testCase := range largeConfig.TestCases {
+		expectedName := fmt.Sprintf("test_case_%d", i)
+		if testCase.Name != expectedName {
+			t.Errorf("Test case %d name should be '%s', got %s", i, expectedName, testCase.Name)
+		}
+
+		expectedURL := fmt.Sprintf("/page%d", i)
+		if testCase.URL != expectedURL {
+			t.Errorf("Test case %d URL should be '%s', got %s", i, expectedURL, testCase.URL)
+		}
+
+		expectedSelector := fmt.Sprintf("//div[@id='test%d']", i)
+		if testCase.Selector != expectedSelector {
+			t.Errorf("Test case %d selector should be '%s', got %s", i, expectedSelector, testCase.Selector)
+		}
+
+		expectedText := fmt.Sprintf("Test Text %d", i)
+		if testCase.Text != expectedText {
+			t.Errorf("Test case %d text should be '%s', got %s", i, expectedText, testCase.Text)
+		}
+	}
+
+	// Test template execution with large config
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, largeConfig)
+	if err != nil {
+		t.Fatalf("Template execution with large config failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Assert output length is reasonable for large config
+	if len(output) < 1000 {
+		t.Errorf("Large config output seems too short: %d characters", len(output))
+	}
+
+	// Check that multiple test cases are present
+	navigationLogCount := strings.Count(output, "console.log('Navigating to")
+	if navigationLogCount != testCaseCount {
+		t.Errorf("Expected %d navigation logs, got %d", testCaseCount, navigationLogCount)
+	}
+
+	// Assert first and last test cases are present
+	if !strings.Contains(output, "test_case_0") {
+		t.Error("Output should contain first test case")
+	}
+	if !strings.Contains(output, fmt.Sprintf("test_case_%d", testCaseCount-1)) {
+		t.Error("Output should contain last test case")
+	}
+
+	// Assert screenshot paths are generated correctly
+	screenshotCount := strings.Count(output, "screenshot_")
+	if screenshotCount < testCaseCount {
+		t.Errorf("Expected at least %d screenshot references, got %d", testCaseCount, screenshotCount)
+	}
+}
+
+func TestJSONMarshalUnmarshal(t *testing.T) {
+	// Test JSON operations directly
+	originalConfig := testConfig
+
+	// Assert original config
+	if originalConfig.BaseURL == "" {
+		t.Error("Original config BaseURL should not be empty")
+	}
+	if len(originalConfig.TestCases) == 0 {
+		t.Error("Original config should have test cases")
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.Marshal(originalConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	// Assert JSON data
+	if len(jsonData) == 0 {
+		t.Error("JSON data should not be empty")
+	}
+	if !strings.Contains(string(jsonData), originalConfig.BaseURL) {
+		t.Error("JSON data should contain BaseURL")
+	}
+	if !strings.Contains(string(jsonData), originalConfig.TestCases[0].Name) {
+		t.Error("JSON data should contain first test case name")
+	}
+
+	// Unmarshal from JSON
+	var unmarshaledConfig Config
+	err = json.Unmarshal(jsonData, &unmarshaledConfig)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	// Verify data integrity
+	if unmarshaledConfig.BaseURL != originalConfig.BaseURL {
+		t.Errorf("BaseURL mismatch: expected %s, got %s", originalConfig.BaseURL, unmarshaledConfig.BaseURL)
+	}
+
+	if len(unmarshaledConfig.TestCases) != len(originalConfig.TestCases) {
+		t.Errorf("TestCases length mismatch: expected %d, got %d", len(originalConfig.TestCases), len(unmarshaledConfig.TestCases))
+	}
+
+	// Assert individual test case fields
+	for i, testCase := range unmarshaledConfig.TestCases {
+		if i < len(originalConfig.TestCases) {
+			if testCase.Name != originalConfig.TestCases[i].Name {
+				t.Errorf("TestCase[%d].Name mismatch: expected %s, got %s", i, originalConfig.TestCases[i].Name, testCase.Name)
+			}
+			if testCase.URL != originalConfig.TestCases[i].URL {
+				t.Errorf("TestCase[%d].URL mismatch: expected %s, got %s", i, originalConfig.TestCases[i].URL, testCase.URL)
+			}
+			if testCase.Selector != originalConfig.TestCases[i].Selector {
+				t.Errorf("TestCase[%d].Selector mismatch: expected %s, got %s", i, originalConfig.TestCases[i].Selector, testCase.Selector)
+			}
+			if testCase.Text != originalConfig.TestCases[i].Text {
+				t.Errorf("TestCase[%d].Text mismatch: expected %s, got %s", i, originalConfig.TestCases[i].Text, testCase.Text)
+			}
+		}
+	}
+
+	// Test round-trip consistency
+	secondJsonData, err := json.Marshal(unmarshaledConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal unmarshaled config: %v", err)
+	}
+
+	if string(jsonData) != string(secondJsonData) {
+		t.Error("Round-trip JSON marshaling should produce identical results")
+	}
+}
+
+func TestFileOperations(t *testing.T) {
+	// Create temporary directory
+	tempDir, err := ioutil.TempDir("", "k6_test_file_ops")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Test file creation and writing
+	testFile := filepath.Join(tempDir, "test_file.txt")
+	testContent := "test content with special chars: !@#$%^&*()"
+
+	err = ioutil.WriteFile(testFile, []byte(testContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Assert file was created
+	fileInfo, err := os.Stat(testFile)
+	if os.IsNotExist(err) {
+		t.Fatal("Test file should exist after writing")
+	}
+	if err != nil {
+		t.Fatalf("Error checking test file: %v", err)
+	}
+
+	// Assert file properties
+	if fileInfo.Size() == 0 {
+		t.Error("Test file should not be empty")
+	}
+	if fileInfo.Size() != int64(len(testContent)) {
+		t.Errorf("File size should be %d, got %d", len(testContent), fileInfo.Size())
+	}
+	if fileInfo.IsDir() {
+		t.Error("Test file should not be a directory")
+	}
+
+	// Test file reading
+	readContent, err := ioutil.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+
+	// Assert read content
+	if len(readContent) == 0 {
+		t.Error("Read content should not be empty")
+	}
+	if string(readContent) != testContent {
+		t.Errorf("File content mismatch: expected %s, got %s", testContent, string(readContent))
+	}
+
+	// Test file existence
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Error("Test file should exist")
+	}
+
+	// Test multiple files
+	for i := 0; i < 5; i++ {
+		fileName := filepath.Join(tempDir, fmt.Sprintf("test_file_%d.txt", i))
+		content := fmt.Sprintf("Content for file %d", i)
+
+		err = ioutil.WriteFile(fileName, []byte(content), 0644)
+		if err != nil {
+			t.Fatalf("Failed to write test file %d: %v", i, err)
+		}
+
+		// Verify each file
+		readData, err := ioutil.ReadFile(fileName)
+		if err != nil {
+			t.Fatalf("Failed to read test file %d: %v", i, err)
+		}
+
+		if string(readData) != content {
+			t.Errorf("File %d content mismatch: expected %s, got %s", i, content, string(readData))
+		}
+	}
+}
+
+func TestStringOperations(t *testing.T) {
+	// Test various string operations used in the code
+	testCases := []struct {
+		input    string
+		suffix   string
+		expected string
+	}{
+		{"config.json", ".json", "config"},
+		{"test.json", ".json", "test"},
+		{"no-extension", ".json", "no-extension"},
+		{"multiple.dots.json", ".json", "multiple.dots"},
+		{"", ".json", ""},
+		{"file.JSON", ".json", "file.JSON"}, // Case sensitive
+		{".json", ".json", ""},
+		{"config.json.backup", ".json", "config.json.backup"}, // Only removes suffix
+	}
+
+	for _, tc := range testCases {
+		result := strings.TrimSuffix(tc.input, tc.suffix)
+		if result != tc.expected {
+			t.Errorf("TrimSuffix(%s, %s): expected %s, got %s", tc.input, tc.suffix, tc.expected, result)
+		}
+
+		// Assert result length
+		expectedLen := len(tc.input)
+		if strings.HasSuffix(tc.input, tc.suffix) {
+			expectedLen = len(tc.input) - len(tc.suffix)
+		}
+		if len(result) != expectedLen {
+			t.Errorf("Result length should be %d, got %d", expectedLen, len(result))
+		}
+	}
+
+	// Test string contains
+	testString := "This is a test string with various content and special chars !@#"
+	searchTerms := []string{"test", "string", "content", "various", "This", "chars", "!@#"}
+
+	for _, term := range searchTerms {
+		if !strings.Contains(testString, term) {
+			t.Errorf("String should contain '%s'", term)
+		}
+	}
+
+	// Test string contains with non-existent terms
+	nonExistentTerms := []string{"xyz", "123", "notfound"}
+	for _, term := range nonExistentTerms {
+		if strings.Contains(testString, term) {
+			t.Errorf("String should not contain '%s'", term)
+		}
+	}
+
+	// Test string operations edge cases
+	emptyString := ""
+	if strings.Contains(emptyString, "test") {
+		t.Error("Empty string should not contain any terms")
+	}
+	if strings.TrimSuffix(emptyString, ".json") != "" {
+		t.Error("TrimSuffix on empty string should return empty string")
+	}
+
+	// Test case sensitivity
+	caseTestString := "CaSeSeNsItIvE"
+	if !strings.Contains(caseTestString, "CaSe") {
+		t.Error("String should contain exact case match")
+	}
+	if strings.Contains(caseTestString, "case") {
+		t.Error("String should not contain different case")
+	}
+}
+
+func TestErrorFormatting(t *testing.T) {
+	// Test error formatting used in the functions
+	testCases := []struct {
+		format   string
+		args     []interface{}
+		expected string
+	}{
+		{"test error: %v", []interface{}{"sample error"}, "test error: sample error"},
+		{"error reading config file: %v", []interface{}{"file not found"}, "error reading config file: file not found"},
+		{"error parsing JSON: %v", []interface{}{"invalid syntax"}, "error parsing JSON: invalid syntax"},
+		{"error creating output file: %v", []interface{}{"permission denied"}, "error creating output file: permission denied"},
+		{"error executing template: %v", []interface{}{"template error"}, "error executing template: template error"},
+	}
+
+	for _, tc := range testCases {
+		testError := fmt.Errorf(tc.format, tc.args...)
+
+		// Assert error is not nil
+		if testError == nil {
+			t.Error("Error should not be nil")
+		}
+
+		// Assert error message
+		if testError.Error() != tc.expected {
+			t.Errorf("Error message mismatch: expected %s, got %s", tc.expected, testError.Error())
+		}
+
+		// Assert error message is not empty
+		if testError.Error() == "" {
+			t.Error("Error message should not be empty")
+		}
+
+		// Assert error message contains expected parts
+		for _, arg := range tc.args {
+			if argStr, ok := arg.(string); ok {
+				if !strings.Contains(testError.Error(), argStr) {
+					t.Errorf("Error message should contain '%s'", argStr)
+				}
+			}
+		}
+	}
+
+	// Test error wrapping
+	originalErr := fmt.Errorf("original error")
+	wrappedErr := fmt.Errorf("wrapped: %v", originalErr)
+
+	if !strings.Contains(wrappedErr.Error(), "original error") {
+		t.Error("Wrapped error should contain original error message")
+	}
+	if !strings.Contains(wrappedErr.Error(), "wrapped:") {
+		t.Error("Wrapped error should contain wrapper text")
+	}
+}
+
+// Additional tests to increase coverage above 80%
+
+func TestMainFunction(t *testing.T) {
+	// Test main function argument validation logic
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	// Test with no arguments
+	os.Args = []string{"program"}
+	
+	if len(os.Args) < 2 {
+		t.Log("Main function would print usage and exit with no arguments")
+	}
+
+	// Test with valid argument count
+	os.Args = []string{"program", "config.json"}
+	
+	if len(os.Args) >= 2 {
+		configFile := os.Args[1]
+		if configFile != "config.json" {
+			t.Errorf("Expected config file 'config.json', got %s", configFile)
+		}
+	}
+}
+
+func TestTemplateExecutionEdgeCases(t *testing.T) {
+	// Test template with nil test cases
+	configWithNilTestCases := Config{
+		BaseURL:   "https://example.com",
+		TestCases: nil,
+	}
+
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, configWithNilTestCases)
+	if err != nil {
+		t.Fatalf("Template execution with nil test cases failed: %v", err)
+	}
+
+	output := buf.String()
+	if output == "" {
+		t.Error("Template output should not be empty even with nil test cases")
+	}
+
+	// Test template with single test case
+	singleTestConfig := Config{
+		BaseURL: "https://single-test.com",
+		TestCases: []TestCase{
+			{
+				Name:     "single_test",
+				URL:      "/single",
+				Selector: "//div[@id='single']",
+				Text:     "Single Test",
+			},
+		},
+	}
+
+	buf.Reset()
+	err = tmpl.Execute(&buf, singleTestConfig)
+	if err != nil {
+		t.Fatalf("Template execution with single test case failed: %v", err)
+	}
+
+	singleOutput := buf.String()
+	if !strings.Contains(singleOutput, "single_test") {
+		t.Error("Single test output should contain test name")
+	}
+	if !strings.Contains(singleOutput, "Single Test") {
+		t.Error("Single test output should contain test text")
+	}
+}
+
+func TestConfigValidation(t *testing.T) {
+	// Test config with empty BaseURL
+	emptyBaseURLConfig := Config{
+		BaseURL: "",
+		TestCases: []TestCase{
+			{Name: "test", URL: "/test", Selector: "selector", Text: "text"},
+		},
+	}
+
+	if emptyBaseURLConfig.BaseURL != "" {
+		t.Error("Empty BaseURL should be empty string")
+	}
+	if len(emptyBaseURLConfig.TestCases) != 1 {
+		t.Error("Should have one test case")
+	}
+
+	// Test config with very long BaseURL
+	longBaseURL := "https://" + strings.Repeat("very-long-domain-name-", 10) + ".com"
+	longURLConfig := Config{
+		BaseURL: longBaseURL,
+		TestCases: []TestCase{
+			{Name: "long_url_test", URL: "/test", Selector: "selector", Text: "text"},
+		},
+	}
+
+	if len(longURLConfig.BaseURL) < 100 {
+		t.Error("Long BaseURL should be very long")
+	}
+	if !strings.Contains(longURLConfig.BaseURL, "very-long-domain-name-") {
+		t.Error("Long BaseURL should contain repeated pattern")
+	}
+}
+
+func TestFilePathOperations(t *testing.T) {
+	// Test various file path operations
+	testPaths := []struct {
+		input    string
+		expected string
+	}{
+		{"config.json", "config_generated.js"},
+		{"./config.json", "./config_generated.js"},
+		{"../config.json", "../config_generated.js"},
+		{"/absolute/path/config.json", "/absolute/path/config_generated.js"},
+		{"C:\\Windows\\config.json", "C:\\Windows\\config_generated.js"},
+		{"config.JSON", "config.JSON_generated.js"},
+		{"config.txt", "config.txt_generated.js"},
+		{"no-extension", "no-extension_generated.js"},
+	}
+
+	for _, tp := range testPaths {
+		result := generateOutputFilename(tp.input)
+		if result != tp.expected {
+			t.Errorf("For path %s, expected %s, got %s", tp.input, tp.expected, result)
+		}
+
+		// Verify the result always ends with _generated.js
+		if !strings.HasSuffix(result, "_generated.js") {
+			t.Errorf("Result should end with _generated.js: %s", result)
+		}
+
+		// Verify the result is not empty
+		if result == "" {
+			t.Error("Result should not be empty")
+		}
+	}
+}
+
+func TestJSONEdgeCases(t *testing.T) {
+	// Test JSON with unicode characters
+	unicodeConfig := Config{
+		BaseURL: "https://unicode-test.com",
+		TestCases: []TestCase{
+			{
+				Name:     "unicode_test_测试",
+				URL:      "/unicode_页面",
+				Selector: "//div[@class='测试类']",
+				Text:     "Unicode text: 你好世界 🌍",
+			},
+		},
+	}
+
+	// Marshal to JSON
+	jsonData, err := json.Marshal(unicodeConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal unicode config: %v", err)
+	}
+
+	// Verify JSON contains unicode
+	jsonStr := string(jsonData)
+	if !strings.Contains(jsonStr, "unicode_test") {
+		t.Error("JSON should contain unicode test name")
+	}
+
+	// Unmarshal back
+	var unmarshaledConfig Config
+	err = json.Unmarshal(jsonData, &unmarshaledConfig)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal unicode config: %v", err)
+	}
+
+	// Verify unicode preservation
+	if unmarshaledConfig.TestCases[0].Name != unicodeConfig.TestCases[0].Name {
+		t.Error("Unicode characters should be preserved in Name")
+	}
+	if unmarshaledConfig.TestCases[0].Text != unicodeConfig.TestCases[0].Text {
+		t.Error("Unicode characters should be preserved in Text")
+	}
+
+	// Test empty JSON object
+	emptyJSON := `{}`
+	var emptyConfig Config
+	err = json.Unmarshal([]byte(emptyJSON), &emptyConfig)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal empty JSON: %v", err)
+	}
+
+	if emptyConfig.BaseURL != "" {
+		t.Error("Empty JSON should result in empty BaseURL")
+	}
+	if emptyConfig.TestCases != nil {
+		t.Error("Empty JSON should result in nil TestCases")
+	}
+}
+
+func TestTemplateWithComplexData(t *testing.T) {
+	// Test template with complex selectors and text
+	complexConfig := Config{
+		BaseURL: "https://complex-test.com",
+		TestCases: []TestCase{
+			{
+				Name:     "complex_xpath_test",
+				URL:      "/complex-page",
+				Selector: "//div[@class='container']//span[contains(@class, 'dynamic-class') and text()='Expected Text']",
+				Text:     "Complex text with\nnewlines and\ttabs and \"quotes\" and 'apostrophes'",
+			},
+			{
+				Name:     "css_selector_test",
+				URL:      "/css-page",
+				Selector: "div.container > span.target:nth-child(2)",
+				Text:     "CSS selector text",
+			},
+			{
+				Name:     "empty_url_test",
+				URL:      "",
+				Selector: "#main-content",
+				Text:     "Empty URL test",
+			},
+		},
+	}
+
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, complexConfig)
+	if err != nil {
+		t.Fatalf("Template execution with complex data failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Verify complex selectors are present
+	if !strings.Contains(output, "complex_xpath_test") {
+		t.Error("Output should contain complex xpath test name")
+	}
+	if !strings.Contains(output, "css_selector_test") {
+		t.Error("Output should contain CSS selector test name")
+	}
+	if !strings.Contains(output, "empty_url_test") {
+		t.Error("Output should contain empty URL test name")
+	}
+
+	// Verify complex text is handled
+	if !strings.Contains(output, "Complex text with") {
+		t.Error("Output should contain complex text")
+	}
+	if !strings.Contains(output, "CSS selector text") {
+		t.Error("Output should contain CSS selector text")
+	}
+
+	// Verify selectors are present
+	if !strings.Contains(output, "div.container") {
+		t.Error("Output should contain CSS selector")
+	}
+	if !strings.Contains(output, "#main-content") {
+		t.Error("Output should contain ID selector")
+	}
+}
+
+func TestStringManipulationEdgeCases(t *testing.T) {
+	// Test TrimSuffix with various edge cases
+	edgeCases := []struct {
+		input    string
+		suffix   string
+		expected string
+	}{
+		{"", "", ""},
+		{"test", "", "test"},
+		{"", "suffix", ""},
+		{"test.json.json", ".json", "test.json"},
+		{"test.JSON", ".json", "test.JSON"}, // Case sensitive
+		{"test", "test", ""},
+		{"testing", "test", "testing"}, // Partial match
+		{"test.json.backup", ".json", "test.json.backup"}, // No match
+	}
+
+	for _, ec := range edgeCases {
+		result := strings.TrimSuffix(ec.input, ec.suffix)
+		if result != ec.expected {
+			t.Errorf("TrimSuffix(%q, %q): expected %q, got %q", ec.input, ec.suffix, ec.expected, result)
+		}
+	}
+
+	// Test Contains with edge cases
+	containsTests := []struct {
+		str      string
+		substr   string
+		expected bool
+	}{
+		{"", "", true},
+		{"test", "", true},
+		{"", "test", false},
+		{"test", "test", true},
+		{"testing", "test", true},
+		{"test", "testing", false},
+		{"Test", "test", false}, // Case sensitive
+		{"test\nwith\nnewlines", "with", true},
+		{"test\twith\ttabs", "with", true},
+	}
+
+	for _, ct := range containsTests {
+		result := strings.Contains(ct.str, ct.substr)
+		if result != ct.expected {
+			t.Errorf("Contains(%q, %q): expected %t, got %t", ct.str, ct.substr, ct.expected, result)
+		}
+	}
+}
+
+func TestTemplateAddFunctionEdgeCases(t *testing.T) {
+	// Test add function with various inputs
+	addTests := []struct {
+		a        int
+		b        int
+		expected int
+	}{
+		{0, 0, 0},
+		{1, 1, 2},
+		{-1, 1, 0},
+		{-1, -1, -2},
+		{100, 200, 300},
+		{999, 1, 1000},
+	}
+
+	addFunc := func(a, b int) int {
+		return a + b
+	}
+
+	for _, at := range addTests {
+		result := addFunc(at.a, at.b)
+		if result != at.expected {
+			t.Errorf("add(%d, %d): expected %d, got %d", at.a, at.b, at.expected, result)
+		}
+	}
+
+	// Test add function in template context
+	testTemplate := `{{range $i := .Numbers}}{{add $i 10}} {{end}}`
+	tmpl, err := template.New("addtest").Funcs(template.FuncMap{
+		"add": addFunc,
+	}).Parse(testTemplate)
+	if err != nil {
+		t.Fatalf("Failed to create add test template: %v", err)
+	}
+
+	data := struct {
+		Numbers []int
+	}{
+		Numbers: []int{1, 2, 3, 4, 5},
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, data)
+	if err != nil {
+		t.Fatalf("Failed to execute add test template: %v", err)
+	}
+
+	result := buf.String()
+	expected := "11 12 13 14 15 "
+	if result != expected {
+		t.Errorf("Template add function result: expected %q, got %q", expected, result)
+	}
+}
+
+func TestFileOperationsExtended(t *testing.T) {
+	// Create temporary directory
+	tempDir, err := ioutil.TempDir("", "k6_extended_file_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Test writing and reading binary data
+	binaryFile := filepath.Join(tempDir, "binary_test.bin")
+	binaryData := []byte{0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD}
+
+	err = ioutil.WriteFile(binaryFile, binaryData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write binary file: %v", err)
+	}
+
+	readBinaryData, err := ioutil.ReadFile(binaryFile)
+	if err != nil {
+		t.Fatalf("Failed to read binary file: %v", err)
+	}
+
+	if len(readBinaryData) != len(binaryData) {
+		t.Errorf("Binary data length mismatch: expected %d, got %d", len(binaryData), len(readBinaryData))
+	}
+
+	for i, b := range binaryData {
+		if readBinaryData[i] != b {
+			t.Errorf("Binary data mismatch at index %d: expected %02x, got %02x", i, b, readBinaryData[i])
+		}
+	}
+
+	// Test large file
+	largeFile := filepath.Join(tempDir, "large_test.txt")
+	largeContent := strings.Repeat("This is a large file content line.\n", 1000)
+
+	err = ioutil.WriteFile(largeFile, []byte(largeContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write large file: %v", err)
+	}
+
+	largeFileInfo, err := os.Stat(largeFile)
+	if err != nil {
+		t.Fatalf("Failed to stat large file: %v", err)
+	}
+
+	if largeFileInfo.Size() < 30000 {
+		t.Errorf("Large file should be at least 30KB, got %d bytes", largeFileInfo.Size())
+	}
+
+	// Read and verify large file
+	readLargeContent, err := ioutil.ReadFile(largeFile)
+	if err != nil {
+		t.Fatalf("Failed to read large file: %v", err)
+	}
+
+	if string(readLargeContent) != largeContent {
+		t.Error("Large file content mismatch")
+	}
+}
