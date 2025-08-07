@@ -1,0 +1,140 @@
+package main  // Changed from package cmd
+
+import (
+	// ... [imports remain unchanged] ...
+)
+
+// ... [testConfig remains unchanged] ...
+
+// Test ValidateBrowserAndFiles function
+func TestValidateBrowserAndFiles(t *testing.T) {
+	// Create temporary directory structure
+	tempDir, err := ioutil.TempDir("", "k6_test_environments")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create base directory
+	baseDir := filepath.Join(tempDir, "performance-tests", "VPEConfig")
+	err = os.MkdirAll(baseDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create base directory: %v", err)
+	}
+
+	// ... [rest of setup remains unchanged] ...
+
+	// Test ValidateBrowserAndFiles
+	err = ValidateBrowserAndFiles(baseDir)  // Changed from processEnvironments()
+	if err != nil {
+		t.Fatalf("ValidateBrowserAndFiles failed: %v", err)
+	}
+
+	// ... [verification remains unchanged] ...
+}
+
+func TestValidateBrowserAndFilesNoBaseDir(t *testing.T) {
+	// Change to a directory without performance-tests
+	tempDir, err := ioutil.TempDir("", "k6_test_no_base")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// ... [setup remains unchanged] ...
+
+	err = ValidateBrowserAndFiles("performance-tests/VPEConfig")  // Changed from processEnvironments()
+	if err == nil {
+		t.Error("Expected error when base directory doesn't exist")
+	}
+}
+
+func TestValidateBrowserAndFilesNoEnvironments(t *testing.T) {
+	// Create empty base directory
+	tempDir, err := ioutil.TempDir("", "k6_test_empty")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	baseDir := filepath.Join(tempDir, "performance-tests", "VPEConfig")
+	err = os.MkdirAll(baseDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create base directory: %v", err)
+	}
+
+	// ... [setup remains unchanged] ...
+
+	err = ValidateBrowserAndFiles(baseDir)  // Changed from processEnvironments()
+	if err == nil {
+		t.Error("Expected error when no environments are processed")
+	}
+}
+
+func TestProcessEnvironment(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "k6_test_process_env")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// ... [setup remains unchanged] ...
+
+	// Define base directory
+	baseDir := filepath.Join(tempDir, "performance-tests", "VPEConfig")
+
+	// Process environment with base directory
+	err = processEnvironment("test-env", browserJsonPath, baseDir)  // Added baseDir argument
+	if err != nil {
+		t.Fatalf("processEnvironment failed: %v", err)
+	}
+
+	// ... [verification remains unchanged] ...
+}
+
+// ... [other test functions] ...
+
+func TestProcessEnvironmentWithInvalidConfig(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "k6_test_invalid_config")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// ... [setup remains unchanged] ...
+
+	// Define base directory
+	baseDir := filepath.Join(tempDir, "performance-tests", "VPEConfig")
+
+	err = processEnvironment("test-env", browserJsonPath, baseDir)  // Added baseDir argument
+	if err == nil {
+		t.Error("Expected error for invalid config")
+	}
+}
+
+// ... [rest of test file] ...
+
+func TestValidateBrowserAndFilesWithMixedConfigs(t *testing.T) {
+	// Test with some valid and some invalid configs
+	tempDir, err := ioutil.TempDir("", "k6_test_mixed")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	baseDir := filepath.Join(tempDir, "performance-tests", "VPEConfig")
+	err = os.MkdirAll(baseDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create base directory: %v", err)
+	}
+
+	// ... [setup remains unchanged] ...
+
+	// This should succeed for valid-env and handle others gracefully
+	err = ValidateBrowserAndFiles(baseDir)  // Changed from processEnvironments()
+	if err != nil {
+		// ... [error handling] ...
+	}
+
+	// ... [verification remains unchanged] ...
+}
