@@ -1,0 +1,89 @@
+{
+  "baseUrl": "https://23d.ecs.dyn.net",
+  "testCases": [
+    {
+      "name": "performance_123456",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[3]/span",
+      "text": "123456"
+    },
+    {
+      "name": "git_commit_webhook",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]",
+      "text": "git commit webhook"
+    },
+    {
+      "name": "commit_check_687a51a0bf4669fa8fecf930",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[4]/span[1]",
+      "text": "687a51a0bf4669fa8fecf930"
+    },
+    {
+      "name": "adoption",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[2]/h2",
+      "text": "LSE Adoption Metrics"
+    },
+    {
+      "name": "support_page",
+      "url": "/support",
+      "selector": "//*[@id=\"welcome-to-support\"]",
+      "text": "Welcome to Support"
+    },
+    {
+      "name": "support_tools",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[3]/span",
+      "text": "tools"
+    },
+    {
+      "name": "tools_ansible",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[2]/h2",
+      "text": "Latest News"
+    },
+    {
+      "name": "support_pipelines",
+      "url": "/support",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[3]/span[1]",
+      "text": "pipelines"
+    },
+    {
+      "name": "support_news",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[3]/span",
+      "text": "news"
+    },
+    {
+      "name": "how-to-migrate-to-the-new-turbo-framework",
+      "url": "/support",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[2]/div/div[1]/div[2]",
+      "text": "How to migrate to the new Turbo framework"
+    },
+    {
+      "name": "support_help",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[3]/span[1]",
+      "text": "help"
+    },
+    {
+      "name": "turbo_123456",
+      "url": "/supersonic",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[3]/span[1]",
+      "text": "123456"
+    },
+    {
+      "name": "turbo_fdn-d-cicd-unify-sentry",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[4]/span[1]",
+      "text": "fdn d cicd unify sentry"
+    },
+    {
+      "name": "turbo_exec_report_page",
+      "url": "",
+      "selector": "//*[@id=\"ui-shell-body-content\"]/main/div[1]/nav/div[4]/span[1]",
+      "text": "4f48ea09 5d70 11f0 8d34 0a580a382be6"
+    }
+  ]
+}
