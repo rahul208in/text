@@ -1,0 +1,746 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
+
+// Test data
+var testConfig = Config{
+	BaseURL: "https://example.com",
+	TestCases: []TestCase{
+		{
+			Name:     "test_case_1",
+			URL:      "/page1",
+			Selector: "//div[@id='test']",
+			Text:     "Test Text",
+		},
+		{
+			Name:     "test_case_2",
+			URL:      "",
+			Selector: "//span[@class='content']",
+			Text:     "Another Test",
+		},
+	},
+}
+
+// Test ValidateBrowserAndFiles function - main CLI function
+func TestValidateBrowserAndFiles(t *testing.T) {
+	// Create temporary directory structure
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_environments")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create base directory structure as expected by CLI
+	baseDir := tempDir
+
+	// Create environment directories with browser.json files
+	envs := []string{"dev", "uat", "prod"}
+	for _, env := range envs {
+		envDir := filepath.Join(baseDir, env)
+		err = os.MkdirAll(envDir, 0755)
+		if err != nil {
+			t.Fatalf("Failed to create env directory %s: %v", env, err)
+		}
+
+		// Create browser.json file
+		browserJsonPath := filepath.Join(envDir, "browser.json")
+		configData, err := json.Marshal(testConfig)
+		if err != nil {
+			t.Fatalf("Failed to marshal config for %s: %v", env, err)
+		}
+
+		err = ioutil.WriteFile(browserJsonPath, configData, 0644)
+		if err != nil {
+			t.Fatalf("Failed to write browser.json for %s: %v", env, err)
+		}
+	}
+
+	// Test ValidateBrowserAndFiles with CLI structure
+	err = ValidateBrowserAndFiles(baseDir)
+	if err != nil {
+		t.Fatalf("ValidateBrowserAndFiles failed: %v", err)
+	}
+
+	// Verify k6 directory was created
+	k6Dir := filepath.Join(baseDir, "k6")
+	if _, err := os.Stat(k6Dir); os.IsNotExist(err) {
+		t.Error("k6 directory should have been created")
+	}
+
+	// Verify env_vars file was created
+	envVarsPath := filepath.Join(k6Dir, "env_vars")
+	if _, err := os.Stat(envVarsPath); os.IsNotExist(err) {
+		t.Error("env_vars file should have been created")
+	}
+
+	// Verify generated scripts
+	for _, env := range envs {
+		scriptPath := filepath.Join(k6Dir, fmt.Sprintf("vpe-default-browser_%s.js", env))
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			t.Errorf("Script for %s should have been created", env)
+		}
+	}
+}
+
+func TestValidateBrowserAndFilesNoBaseDir(t *testing.T) {
+	// Test with non-existent directory
+	nonExistentDir := "/path/that/does/not/exist"
+	
+	err := ValidateBrowserAndFiles(nonExistentDir)
+	if err == nil {
+		t.Error("Expected error when base directory doesn't exist")
+	}
+}
+
+func TestValidateBrowserAndFilesNoEnvironments(t *testing.T) {
+	// Create empty base directory
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_empty")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	err = ValidateBrowserAndFiles(tempDir)
+	if err == nil {
+		t.Error("Expected error when no environments are found")
+	}
+}
+
+func TestValidateBrowserAndFilesWithMixedConfigs(t *testing.T) {
+	// Test with some valid and some invalid configs
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_mixed")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create valid environment
+	validEnvDir := filepath.Join(tempDir, "valid-env")
+	err = os.MkdirAll(validEnvDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create valid env directory: %v", err)
+	}
+
+	validConfigPath := filepath.Join(validEnvDir, "browser.json")
+	configData, err := json.Marshal(testConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	err = ioutil.WriteFile(validConfigPath, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write valid config: %v", err)
+	}
+
+	// Create invalid environment
+	invalidEnvDir := filepath.Join(tempDir, "invalid-env")
+	err = os.MkdirAll(invalidEnvDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create invalid env directory: %v", err)
+	}
+
+	invalidConfigPath := filepath.Join(invalidEnvDir, "browser.json")
+	err = ioutil.WriteFile(invalidConfigPath, []byte(`{"invalid": json}`), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid config: %v", err)
+	}
+
+	// Create environment without browser.json
+	emptyEnvDir := filepath.Join(tempDir, "empty-env")
+	err = os.MkdirAll(emptyEnvDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create empty env directory: %v", err)
+	}
+
+	// This should handle errors gracefully and process valid environments
+	err = ValidateBrowserAndFiles(tempDir)
+	// The function should succeed if at least one valid environment is processed
+	// Check for the specific behavior of your ValidateBrowserAndFiles function
+
+	// Verify only valid environment generated script (if function succeeds)
+	if err == nil {
+		k6Dir := filepath.Join(tempDir, "k6")
+		validScriptPath := filepath.Join(k6Dir, "vpe-default-browser_valid-env.js")
+		if _, err := os.Stat(validScriptPath); os.IsNotExist(err) {
+			t.Error("Valid environment script should have been created")
+		}
+	}
+}
+
+func TestProcessEnvironment(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_process_env")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create browser.json file
+	browserJsonPath := filepath.Join(tempDir, "browser.json")
+	configData, err := json.Marshal(testConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	err = ioutil.WriteFile(browserJsonPath, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write browser.json: %v", err)
+	}
+
+	// Create k6 directory structure (parent of tempDir for CLI structure)
+	k6Dir := filepath.Join(filepath.Dir(tempDir), "k6")
+	err = os.MkdirAll(k6Dir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create k6 directory: %v", err)
+	}
+
+	err = processEnvironment("test-env", browserJsonPath, filepath.Dir(tempDir))
+	if err != nil {
+		t.Fatalf("processEnvironment failed: %v", err)
+	}
+
+	// Verify script was created
+	scriptPath := filepath.Join(k6Dir, "vpe-default-browser_test-env.js")
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		t.Error("Script should have been created")
+	}
+}
+
+func TestProcessEnvironmentWithInvalidConfig(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_invalid_config")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create invalid browser.json file
+	browserJsonPath := filepath.Join(tempDir, "browser.json")
+	err = ioutil.WriteFile(browserJsonPath, []byte(`{"invalid": json}`), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid browser.json: %v", err)
+	}
+
+	err = processEnvironment("test-env", browserJsonPath, tempDir)
+	if err == nil {
+		t.Error("Expected error for invalid config")
+	}
+}
+
+// Test template functions (unchanged as they don't depend on CLI structure)
+func TestTemplateExecutionEdgeCases(t *testing.T) {
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	// Test with config containing nil test cases slice - this should work
+	configWithNilTestCases := Config{
+		BaseURL:   "https://test.com",
+		TestCases: nil,
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, configWithNilTestCases)
+	if err != nil {
+		t.Fatalf("Template execution should handle nil test cases: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "export default async function") {
+		t.Error("Template should contain main function with nil test cases")
+	}
+
+	// Test with empty config instead of nil config
+	emptyConfig := Config{}
+	buf.Reset()
+	err = tmpl.Execute(&buf, emptyConfig)
+	if err != nil {
+		t.Fatalf("Template execution should handle empty config: %v", err)
+	}
+
+	if buf.String() == "" {
+		t.Error("Template output should not be empty with empty config")
+	}
+}
+
+func TestBasicFunctionality(t *testing.T) {
+	// Simple test to ensure basic functionality works
+	config := Config{
+		BaseURL: "https://test.com",
+		TestCases: []TestCase{
+			{Name: "test1", URL: "/url1", Selector: "selector1", Text: "text1"},
+		},
+	}
+
+	// Test JSON marshaling
+	data, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("JSON marshal failed: %v", err)
+	}
+
+	// Test JSON unmarshaling
+	var newConfig Config
+	err = json.Unmarshal(data, &newConfig)
+	if err != nil {
+		t.Fatalf("JSON unmarshal failed: %v", err)
+	}
+
+	if newConfig.BaseURL != config.BaseURL {
+		t.Error("BaseURL should match after JSON round-trip")
+	}
+
+	// Test template creation and execution
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, config)
+	if err != nil {
+		t.Fatalf("Template execution failed: %v", err)
+	}
+
+	output := buf.String()
+	if len(output) < 100 {
+		t.Error("Template output seems too short")
+	}
+}
+
+func TestWindowsCompatibility(t *testing.T) {
+	// Test Windows-specific path handling
+	if runtime.GOOS == "windows" {
+		// Test Windows path separators
+		path := filepath.Join("a", "b", "c")
+		if !strings.Contains(path, "\\") {
+			t.Error("Windows paths should use backslash separator")
+		}
+	}
+
+	// Test cross-platform filepath operations
+	base := filepath.Base("path/to/file.txt")
+	if base != "file.txt" {
+		t.Errorf("Expected file.txt, got %s", base)
+	}
+}
+
+func TestCreateTemplate(t *testing.T) {
+	// Ensure testConfig is properly initialized
+	testConfig := Config{
+		BaseURL: "https://example.com",
+		TestCases: []TestCase{
+			{
+				Name: "LoginTest",
+				Text: "User login flow",
+				URL:  "/login",
+				Selector: "//input[@id='username']",
+			},
+		},
+	}
+
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	if tmpl == nil {
+		t.Fatal("Expected template, got nil")
+	}
+	if tmpl.Name() != "k6script" {
+		t.Errorf("Expected template name 'k6script', got %s", tmpl.Name())
+	}
+
+	// Test template execution
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, testConfig)
+	if err != nil {
+		t.Fatalf("Template execution failed: %v", err)
+	}
+
+	output := buf.String()
+	if output == "" {
+		t.Error("Template output should not be empty")
+	}
+
+	expectedStrings := []string{
+		"import { browser } from 'k6/browser'",
+		"export const options",
+		"export default async function",
+		"export function handleSummary",
+		testConfig.BaseURL,
+		testConfig.TestCases[0].Name,
+		"browser_http_req_failed",
+		"browser_http_req_duration",
+		"constant-vus",
+		"chromium",
+		"headless: true",
+		"screenshot",
+		"waitForSelector",
+		"textContent",
+		"insecureSkipTLSVerify: true",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(output, expected) {
+			t.Errorf("Template output should contain '%s'", expected)
+		}
+	}
+
+	// More robust test case verification
+	found := 0
+	for _, tc := range testConfig.TestCases {
+		if strings.Contains(output, tc.Name) {
+			found++
+		}
+	}
+	if found < len(testConfig.TestCases) {
+		t.Errorf("Should find all test case names, found %d/%d", found, len(testConfig.TestCases))
+	}
+}
+
+func TestConfigValidation(t *testing.T) {
+	// Test config with very long strings
+	longConfig := Config{
+		BaseURL: "https://very-long-domain-name-that-exceeds-normal-length.example.com/with/very/long/path/segments",
+		TestCases: []TestCase{
+			{
+				Name:     "very_long_test_name_that_exceeds_normal_naming_conventions_and_contains_many_characters",
+				URL:      "/very/long/url/path/with/many/segments/and/query/parameters?param1=value1&param2=value2&param3=value3",
+				Selector: "//div[@class='very-long-class-name-with-multiple-attributes']//span[@id='very-long-id-name']//a[contains(@href, 'very-long-href-value')]",
+				Text:     "Very long text content that might be found on a webpage and contains multiple sentences. This text is used to test how the template handles longer content strings.",
+			},
+		},
+	}
+
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, longConfig)
+	if err != nil {
+		t.Fatalf("Template execution failed with long config: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, longConfig.BaseURL) {
+		t.Error("Template should contain long base URL")
+	}
+	if !strings.Contains(output, longConfig.TestCases[0].Name) {
+		t.Error("Template should contain long test name")
+	}
+}
+
+func TestEnsureDirectoryExists(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_ensure_dir")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Test creating new directory
+	newDir := filepath.Join(tempDir, "new-directory")
+	err = ensureDirectoryExists(newDir)
+	if err != nil {
+		t.Fatalf("ensureDirectoryExists failed: %v", err)
+	}
+
+	if _, err := os.Stat(newDir); os.IsNotExist(err) {
+		t.Error("Directory should have been created")
+	}
+
+	// Test with existing directory
+	err = ensureDirectoryExists(newDir)
+	if err != nil {
+		t.Fatalf("ensureDirectoryExists failed for existing directory: %v", err)
+	}
+
+	// Test with nested directory creation
+	nestedDir := filepath.Join(tempDir, "level1", "level2", "level3")
+	err = ensureDirectoryExists(nestedDir)
+	if err != nil {
+		t.Fatalf("ensureDirectoryExists failed for nested directory: %v", err)
+	}
+
+	if _, err := os.Stat(nestedDir); os.IsNotExist(err) {
+		t.Error("Nested directory should have been created")
+	}
+}
+
+func TestHandleEnvVarsFile(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_env_vars")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Test creating new env_vars file
+	err = handleEnvVarsFile(tempDir)
+	if err != nil {
+		t.Fatalf("handleEnvVarsFile failed: %v", err)
+	}
+
+	envVarsPath := filepath.Join(tempDir, "env_vars")
+	content, err := ioutil.ReadFile(envVarsPath)
+	if err != nil {
+		t.Fatalf("Failed to read env_vars file: %v", err)
+	}
+
+	if !strings.Contains(string(content), "export browser=true") {
+		t.Error("env_vars file should contain 'export browser=true'")
+	}
+
+	// Test with existing env_vars file
+	err = handleEnvVarsFile(tempDir)
+	if err != nil {
+		t.Fatalf("handleEnvVarsFile failed for existing file: %v", err)
+	}
+}
+
+func TestReadConfigFile(t *testing.T) {
+	// Create temporary directory
+	tempDir, err := ioutil.TempDir("", "k6_cli_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create valid config file
+	configFile := filepath.Join(tempDir, "test_config.json")
+	configData, err := json.Marshal(testConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal test config: %v", err)
+	}
+
+	err = ioutil.WriteFile(configFile, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Test reading valid config
+	config, err := readConfigFile(configFile)
+	if err != nil {
+		t.Fatalf("readConfigFile failed: %v", err)
+	}
+
+	if config == nil {
+		t.Fatal("Expected config to be non-nil")
+	}
+	if config.BaseURL != testConfig.BaseURL {
+		t.Errorf("Expected BaseURL %s, got %s", testConfig.BaseURL, config.BaseURL)
+	}
+	if len(config.TestCases) != len(testConfig.TestCases) {
+		t.Errorf("Expected %d test cases, got %d", len(testConfig.TestCases), len(config.TestCases))
+	}
+}
+
+func TestGenerateScript(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "k6_cli_test_generate")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	outputFile := filepath.Join(tempDir, "test_output.js")
+
+	err = generateScript(&testConfig, outputFile)
+	if err != nil {
+		t.Fatalf("generateScript failed: %v", err)
+	}
+
+	// Verify file was created
+	fileInfo, err := os.Stat(outputFile)
+	if os.IsNotExist(err) {
+		t.Fatal("Output file was not created")
+	}
+	if fileInfo.Size() == 0 {
+		t.Error("Output file should not be empty")
+	}
+
+	// Read and verify content
+	content, err := ioutil.ReadFile(outputFile)
+	if err != nil {
+		t.Fatalf("Failed to read output file: %v", err)
+	}
+
+	contentStr := string(content)
+	expectedStrings := []string{
+		"import { browser } from 'k6/browser'",
+		"export function handleSummary",
+		testConfig.BaseURL,
+		testConfig.TestCases[0].Name,
+		testConfig.TestCases[1].Name,
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(contentStr, expected) {
+			t.Errorf("Generated script should contain '%s'", expected)
+		}
+	}
+
+	// Test with nil config
+	err = generateScript(nil, outputFile)
+	if err == nil {
+		t.Error("Expected error for nil config")
+	}
+}
+
+// Additional edge case tests
+func TestStringEdgeCases(t *testing.T) {
+	// Test string operations with edge cases
+	edgeCases := []struct {
+		input    string
+		substr   string
+		expected bool
+	}{
+		{"", "", true},
+		{"test", "", true},
+		{"", "test", false},
+		{"test", "test", true},
+		{"test", "TEST", false},
+		{"Test", "test", false},
+		{"测试", "测", true},
+		{"🌍🌎🌏", "🌍", true},
+	}
+
+	for _, ec := range edgeCases {
+		result := strings.Contains(ec.input, ec.substr)
+		if result != ec.expected {
+			t.Errorf("strings.Contains(%s, %s): expected %t, got %t", ec.input, ec.substr, ec.expected, result)
+		}
+	}
+}
+
+func TestJSONEdgeCases(t *testing.T) {
+	// Test JSON operations with edge cases
+	emptyConfig := Config{}
+	
+	jsonData, err := json.Marshal(emptyConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal empty config: %v", err)
+	}
+
+	var unmarshaledConfig Config
+	err = json.Unmarshal(jsonData, &unmarshaledConfig)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal empty config: %v", err)
+	}
+
+	if unmarshaledConfig.BaseURL != "" {
+		t.Error("Empty config BaseURL should be empty")
+	}
+
+	// Test with malformed JSON bytes
+	malformedJSON := []byte(`{"BaseURL": "test", "TestCases": [{"Name": "test"`)
+	err = json.Unmarshal(malformedJSON, &unmarshaledConfig)
+	if err == nil {
+		t.Error("Expected error for malformed JSON")
+	}
+}
+
+func TestTemplateWithSpecialCharacters(t *testing.T) {
+	specialConfig := Config{
+		BaseURL: "https://test.com",
+		TestCases: []TestCase{
+			{
+				Name:     "test_with_quotes_\"and\"_apostrophes_'and'_backslashes_\\",
+				URL:      "/path with spaces & special chars?param=value&other=test",
+				Selector: "//div[@class=\"test 'quoted' class\"]",
+				Text:     "Text with\nnewlines\tand\ttabs and \"quotes\" and 'apostrophes'",
+			},
+		},
+	}
+
+	tmpl, err := createTemplate()
+	if err != nil {
+		t.Fatalf("createTemplate failed: %v", err)
+	}
+
+	var buf strings.Builder
+	err = tmpl.Execute(&buf, specialConfig)
+	if err != nil {
+		t.Fatalf("Template execution failed with special characters: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, specialConfig.TestCases[0].Name) {
+		t.Error("Template should handle test names with special characters")
+	}
+}
+
+// Helper functions for CLI testing
+func TestCLIStructureValidation(t *testing.T) {
+	// Test that CLI expects correct directory structure
+	tempDir, err := ioutil.TempDir("", "k6_cli_structure_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create environment with browser.json at root level (CLI structure)
+	envDir := filepath.Join(tempDir, "test-env")
+	err = os.MkdirAll(envDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create env directory: %v", err)
+	}
+
+	browserJsonPath := filepath.Join(envDir, "browser.json")
+	configData, err := json.Marshal(testConfig)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	err = ioutil.WriteFile(browserJsonPath, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write browser.json: %v", err)
+	}
+
+	// Test CLI validation function
+	err = ValidateBrowserAndFiles(tempDir)
+	if err != nil {
+		t.Fatalf("CLI validation should succeed with proper structure: %v", err)
+	}
+
+	// Verify k6 directory created in the right place for CLI
+	k6Dir := filepath.Join(tempDir, "k6")
+	if _, err := os.Stat(k6Dir); os.IsNotExist(err) {
+		t.Error("CLI should create k6 directory at base level")
+	}
+}
+
+func TestCLIErrorHandling(t *testing.T) {
+	// Test CLI-specific error handling
+	
+	// Test with completely empty directory
+	tempDir, err := ioutil.TempDir("", "k6_cli_error_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	err = ValidateBrowserAndFiles(tempDir)
+	if err == nil {
+		t.Error("CLI should return error for empty directory")
+	}
+	
+	// Test with directory containing files but no subdirectories
+	testFile := filepath.Join(tempDir, "test.txt")
+	err = ioutil.WriteFile(testFile, []byte("test content"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+	
+	err = ValidateBrowserAndFiles(tempDir)
+	if err == nil {
+		t.Error("CLI should return error when no valid environments found")
+	}
+}
