@@ -1,0 +1,376 @@
+package main
+
+import (
+	
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/template"
+)
+
+// TestCase represents a single test case
+type TestCase struct {
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	Selector string `json:"selector"`
+	Text     string `json:"text"`
+}
+
+// Config represents the configuration structure
+type Config struct {
+	BaseURL   string     `json:"baseUrl"`
+	TestCases []TestCase `json:"testCases"`
+}
+
+const k6Template = `import { browser } from 'k6/browser';
+import htmlReport from './bundle.js';
+import { check } from 'k6';
+
+const apiErrors = __ENV.apiErrors || "0.01"; // Default to 0.01 if not set
+const responseTime = __ENV.responseTime || "300"; // Default to 300ms if not set
+
+export const options = {
+    insecureSkipTLSVerify: true,
+    thresholds: {
+        browser_http_req_failed: [{
+            threshold: 'rate<' + apiErrors,
+            abortOnFail: false
+        }],
+        browser_http_req_duration: [{
+            threshold: 'avg<' + responseTime,
+            abortOnFail: false
+        }],
+    },
+    scenarios: {
+        browser_test: {
+            executor: 'constant-vus',
+            vus: 1,
+            duration: "30s",
+            options: {
+                browser: {
+                    type: 'chromium',
+                    headless: true,
+                }
+            }
+        }
+    }
+};
+
+export default async function () {
+    const browserInstance = await browser.newPage(); // Create a new browser instance
+    const page = browserInstance;
+{{range $index, $test := .TestCases}}
+    console.log('Navigating to {{$.BaseURL}}{{$test.URL}}');
+    await page.goto('{{$.BaseURL}}{{$test.URL}}');
+    const pageVisible_{{add $index 1}} = await page.waitForSelector('body', { state: 'visible', timeout: 5000 });
+    const pageNavigated_{{add $index 1}} = check(pageVisible_{{add $index 1}}, {
+        '{{$test.Name}} navigated successfully to {{$.BaseURL}}{{$test.URL}}': (element) => element !== null
+    });
+
+    const navigationScreenshotPath_{{add $index 1}} = 'screenshot_navigation_{{add $index 1}}.png';
+    await page.screenshot({ fullPage: true, path: navigationScreenshotPath_{{add $index 1}} });
+    console.log('Screenshot saved at: screenshot_navigation_{{add $index 1}}.png');
+
+    if (!pageNavigated_{{add $index 1}}) {
+        console.error('Failed to navigate to URL.');
+        check(null, { "{{$test.Name}} navigation failed to {{$.BaseURL}}{{$test.URL}}": false });
+        return;
+    }
+
+    try {
+        console.log('Checking for text: "{{$test.Text}}"...');
+        const elementText_{{add $index 1}} = await page.locator('{{$test.Selector}}').textContent();
+        const textCheck_{{add $index 1}} = check(elementText_{{add $index 1}}, {
+            "{{$test.Name}} Text '{{$test.Text}}' is present on the page": (text) => text && text.includes('{{$test.Text}}')
+        });
+
+        if (!textCheck_{{add $index 1}}) {
+            console.error('Text "{{$test.Text}}" not found on the page.');
+            check(null, { '{{$test.Name}} Text "{{$test.Text}}" presence check failed': false });
+        }
+    } catch (error) {
+        console.error('Error while checking for text: "{{$test.Text}}"', error.message);
+        check(null, { '{{$test.Name}} Text "{{$test.Text}}" presence check failed': false });
+    }
+
+    const screenshotPath_{{add $index 1}} = 'screenshot_{{$test.Name}}_{{add $index 1}}.png';
+    await page.screenshot({ fullPage: true, path: screenshotPath_{{add $index 1}} });
+    console.log('Screenshot saved at: screenshot_{{$test.Name}}_{{add $index 1}}.png');
+    console.log('{{$test.Name}} completed.');
+{{end}}
+    await page.close();
+}
+
+export function handleSummary(data) {
+    return {
+        'default-summary.html': htmlReport(data),
+        'default-summary.json': JSON.stringify(data),
+    };
+}`
+
+// processEnvironments scans for environment folders and processes browser.json files
+func processEnvironments() error {
+	baseDir := "performance-tests/VPEConfig"
+	
+	// Check if base directory exists
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		return fmt.Errorf("base directory '%s' does not exist", baseDir)
+	}
+
+	fmt.Printf("🔍 Scanning for environment folders in: %s\n", baseDir)
+
+	// Read all directories in the base path
+	entries, err := ioutil.ReadDir(baseDir)
+	if err != nil {
+		return fmt.Errorf("error reading base directory '%s': %v", baseDir, err)
+	}
+
+	var processedEnvs []string
+	var skippedEnvs []string
+	var errorEnvs []string
+
+	// Process each directory
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		envName := entry.Name()
+		envPath := filepath.Join(baseDir, envName)
+		browserJsonPath := filepath.Join(envPath, "browser.json")
+
+		fmt.Printf("\n📁 Processing environment: %s\n", envName)
+
+		// Check if browser.json exists
+		if _, err := os.Stat(browserJsonPath); os.IsNotExist(err) {
+			fmt.Printf("   ⚠️  Skipping '%s' - browser.json not found\n", envName)
+			skippedEnvs = append(skippedEnvs, envName)
+			continue
+		}
+
+		// Process the browser.json file
+		if err := processEnvironment(envName, browserJsonPath); err != nil {
+			fmt.Printf("   ❌ Error processing '%s': %v\n", envName, err)
+			errorEnvs = append(errorEnvs, envName)
+		} else {
+			fmt.Printf("   ✅ Successfully processed '%s'\n", envName)
+			processedEnvs = append(processedEnvs, envName)
+		}
+	}
+
+	// Print summary
+	fmt.Printf("\n" + strings.Repeat("=", 60) + "\n")
+	fmt.Printf("📊 PROCESSING SUMMARY\n")
+	fmt.Printf(strings.Repeat("=", 60) + "\n")
+	
+	if len(processedEnvs) > 0 {
+		fmt.Printf("✅ Successfully processed (%d): %s\n", len(processedEnvs), strings.Join(processedEnvs, ", "))
+	}
+	
+	if len(skippedEnvs) > 0 {
+		fmt.Printf("⚠️  Skipped (%d): %s\n", len(skippedEnvs), strings.Join(skippedEnvs, ", "))
+	}
+	
+	if len(errorEnvs) > 0 {
+		fmt.Printf("❌ Failed (%d): %s\n", len(errorEnvs), strings.Join(errorEnvs, ", "))
+	}
+
+	if len(processedEnvs) == 0 {
+		return fmt.Errorf("no environments were successfully processed")
+	}
+
+	return nil
+}
+
+// processEnvironment processes a single environment's browser.json file
+func processEnvironment(envName, browserJsonPath string) error {
+	// Read and parse the browser.json file
+	config, err := readConfigFile(browserJsonPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %v", err)
+	}
+
+	// Create k6 directory if it doesn't exist
+	k6Dir := "performance-tests/VPEConfig/k6"
+	if err := ensureDirectoryExists(k6Dir); err != nil {
+		return fmt.Errorf("failed to create k6 directory: %v", err)
+	}
+
+	// Generate output filename
+	outputFilename := fmt.Sprintf("vpe-default-browser_%s.js", envName)
+	outputPath := filepath.Join(k6Dir, outputFilename)
+
+	// Generate the k6 script
+	if err := generateScript(config, outputPath); err != nil {
+		return fmt.Errorf("failed to generate k6 script: %v", err)
+	}
+
+	// Handle env_vars file
+	if err := handleEnvVarsFile(k6Dir); err != nil {
+		return fmt.Errorf("failed to handle env_vars file: %v", err)
+	}
+
+	fmt.Printf("   📄 Generated: %s\n", outputPath)
+	return nil
+}
+
+// ensureDirectoryExists creates a directory if it doesn't exist
+func ensureDirectoryExists(dirPath string) error {
+	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		fmt.Printf("   📁 Creating directory: %s\n", dirPath)
+		if err := os.MkdirAll(dirPath, 0755); err != nil {
+			return fmt.Errorf("failed to create directory '%s': %v", dirPath, err)
+		}
+		fmt.Printf("   ✅ Directory created successfully\n")
+	} else if err != nil {
+		return fmt.Errorf("error checking directory '%s': %v", dirPath, err)
+	} else {
+		fmt.Printf("   📁 Directory already exists: %s\n", dirPath)
+	}
+	return nil
+}
+
+// handleEnvVarsFile manages the env_vars file in the k6 directory
+func handleEnvVarsFile(k6Dir string) error {
+	envVarsPath := filepath.Join(k6Dir, "env_vars")
+	
+	// Check if env_vars file exists
+	if _, err := os.Stat(envVarsPath); os.IsNotExist(err) {
+		// Create new env_vars file
+		fmt.Printf("   📝 Creating env_vars file: %s\n", envVarsPath)
+		content := "export browser=true\n"
+		if err := ioutil.WriteFile(envVarsPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to create env_vars file: %v", err)
+		}
+		fmt.Printf("   ✅ env_vars file created with browser=true\n")
+	} else if err != nil {
+		return fmt.Errorf("error checking env_vars file: %v", err)
+	} else {
+		// File exists, check if it contains browser=true
+		fmt.Printf("   📝 Checking existing env_vars file\n")
+		if err := updateEnvVarsFile(envVarsPath); err != nil {
+			return fmt.Errorf("failed to update env_vars file: %v", err)
+		}
+	}
+	
+	return nil
+}
+
+// updateEnvVarsFile updates the env_vars file to ensure browser=true is set
+func updateEnvVarsFile(envVarsPath string) error {
+	// Read existing content
+	content, err := ioutil.ReadFile(envVarsPath)
+	if err != nil {
+		return fmt.Errorf("failed to read env_vars file: %v", err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+	browserExportFound := false
+	var updatedLines []string
+
+	// Check each line and update if necessary
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmedLine, "export browser=") {
+			browserExportFound = true
+			if trimmedLine != "export browser=true" {
+				fmt.Printf("   🔄 Updating browser export from '%s' to 'export browser=true'\n", trimmedLine)
+				updatedLines = append(updatedLines, "export browser=true")
+			} else {
+				fmt.Printf("   ✅ browser=true already set correctly\n")
+				updatedLines = append(updatedLines, line)
+			}
+		} else if trimmedLine != "" {
+			updatedLines = append(updatedLines, line)
+		}
+	}
+
+	// Add browser=true if not found
+	if !browserExportFound {
+		fmt.Printf("   ➕ Adding 'export browser=true' to env_vars file\n")
+		updatedLines = append(updatedLines, "export browser=true")
+	}
+
+	// Write updated content back to file
+	updatedContent := strings.Join(updatedLines, "\n") + "\n"
+	if err := ioutil.WriteFile(envVarsPath, []byte(updatedContent), 0644); err != nil {
+		return fmt.Errorf("failed to write updated env_vars file: %v", err)
+	}
+
+	return nil
+}
+
+// readConfigFile reads and parses the JSON configuration file
+func readConfigFile(filename string) (*Config, error) {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("error reading config file: %v", err)
+	}
+
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("error parsing JSON: %v", err)
+	}
+
+	return &config, nil
+}
+
+// createTemplate creates and returns the k6 script template
+func createTemplate() (*template.Template, error) {
+	funcMap := template.FuncMap{
+		"add": func(a, b int) int {
+			return a + b
+		},
+	}
+
+	tmpl, err := template.New("k6script").Funcs(funcMap).Parse(k6Template)
+	if err != nil {
+		return nil, fmt.Errorf("error creating template: %v", err)
+	}
+
+	return tmpl, nil
+}
+
+// generateScript generates the k6 script from the configuration
+func generateScript(config *Config, outputPath string) error {
+	tmpl, err := createTemplate()
+	if err != nil {
+		return fmt.Errorf("error creating template: %v", err)
+	}
+
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("error creating output file: %v", err)
+	}
+	defer file.Close()
+
+	if err := tmpl.Execute(file, config); err != nil {
+		return fmt.Errorf("error executing template: %v", err)
+	}
+
+	return nil
+}
+
+func main() {
+	fmt.Printf("🚀 K6 Browser Test Generator\n")
+	fmt.Printf(strings.Repeat("=", 60) + "\n")
+
+	if err := processEnvironments(); err != nil {
+		fmt.Printf("\n❌ FATAL ERROR: %v\n", err)
+		fmt.Printf("\n💡 TROUBLESHOOTING TIPS:\n")
+		fmt.Printf("   • Ensure 'performance-tests/VPEConfig' directory exists\n")
+		fmt.Printf("   • Check that environment folders contain 'browser.json' files\n")
+		fmt.Printf("   • Verify JSON files have valid syntax\n")
+		fmt.Printf("   • Ensure you have write permissions for the k6 directory\n")
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n🎉 All environments processed successfully!\n")
+	fmt.Printf("\n📋 NEXT STEPS:\n")
+	fmt.Printf("   • Review generated k6 scripts in 'performance-tests/VPEConfig/k6/'\n")
+	fmt.Printf("   • Check env_vars file for browser configuration\n")
+	fmt.Printf("   • Run k6 tests: k6 run <script-name>.js\n")
+}
