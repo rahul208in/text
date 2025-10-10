@@ -1,7 +1,7 @@
 import { browser } from 'k6/browser';
 import { check, group } from 'k6';
 import { htmlReport } from './bundle.js';
-import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.2/index.js';
+
 
 export const options = {
   scenarios: {
@@ -23,24 +23,12 @@ export default async function () {
 
   const baseURL = 'https://example.com';
 
-  const testResults = {
-    totalSteps: 0,
-    passedSteps: 0,
-    failedSteps: 0,
-    totalChecks: 0,
-    passedChecks: 0,
-    failedChecks: 0,
-  };
-
   const runStep = async (label, fn) => {
-    testResults.totalSteps++;
     console.log(`▶️  ${label}`);
     try {
       await fn();
-      testResults.passedSteps++;
       console.log(`✅ ${label}`);
     } catch (err) {
-      testResults.failedSteps++;
       console.error(`❌ ${label} - ${err?.message || err}`);
     }
   };
@@ -54,16 +42,8 @@ export default async function () {
   };
 
   const recordCheckInGroup = (groupName, name, ok) => {
-    testResults.totalChecks++;
     group(groupName, () => {
-      const r = check(null, { [name]: () => ok });
-      if (r) {
-        testResults.passedChecks++;
-        console.log(`   ✓ ${name}`);
-      } else {
-        testResults.failedChecks++;
-        console.error(`   ✗ ${name}`);
-      }
+      check(null, { [name]: () => ok });
     });
   };
 
@@ -195,18 +175,7 @@ export default async function () {
       await page.screenshot({ path: 'screenshots/07_final_cart.png' });
     });
 
-    // Summary
-    console.log('\n📊 Test Summary:');
-    console.log(`   Total Steps:   ${testResults.totalSteps}`);
-    console.log(`   Passed Steps:  ${testResults.passedSteps}`);
-    console.log(`   Failed Steps:  ${testResults.failedSteps}`);
-    console.log(`   Total Checks:  ${testResults.totalChecks}`);
-    console.log(`   Passed Checks: ${testResults.passedChecks}`);
-    console.log(`   Failed Checks: ${testResults.failedChecks}`);
-    const stepRate = (testResults.passedSteps / Math.max(1, testResults.totalSteps)) * 100;
-    const checkRate = (testResults.passedChecks / Math.max(1, testResults.totalChecks)) * 100;
-    console.log(`   Step Success Rate:  ${stepRate.toFixed(2)}%`);
-    console.log(`   Check Success Rate: ${checkRate.toFixed(2)}%`);
+ 
   } catch (err) {
     console.error('❌ Critical error during test execution:', err);
   } finally {
@@ -231,11 +200,7 @@ export default async function () {
 
 export function handleSummary(data) {
   return {
-    stdout: textSummary(data, { indent: ' ', enableColors: true }),
-    'report.html': htmlReport(data, {
-      title: 'Browser Test Report',
-      inlineAssets: true,
-    }),
+    'summary.html': htmlReport(data),
     'summary.json': JSON.stringify(data),
   };
 }
