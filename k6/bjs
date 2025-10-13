@@ -1,0 +1,64 @@
+{
+  "baseUrl": "https://www.hackerrank.com",
+  "transactions": [
+    {
+      "name": "Main Page Navigation",
+      "steps": [
+        {
+          "name": "Navigate to main page",
+          "action": "goto",
+          "url": "/",
+          "screenshot": true
+        },
+        {
+          "name": "Check main page heading",
+          "action": "check",
+          "selector": "xpath=/html/body/div[2]/div/div/div/div/h1/span[2]",
+          "screenshot": false
+        },
+        {
+          "name": "Click Get Started button",
+          "action": "click",
+          "selector": "xpath=/html/body/div[2]/div/div/div/div/div/a[1]",
+          "screenshot": true,
+          "waitForLoadState": true,
+          "check": {
+            "name": "Signup form should appear",
+            "selector": "xpath=//*[@id='skip-nav-main']/div/div/div[2]/form/div/div[1]/div[1]",
+            "screenshot": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "Product Navigation",
+      "steps": [
+        {
+          "name": "Navigate to homepage",
+          "action": "goto",
+          "url": "/",
+          "screenshot": false
+        },
+        {
+          "name": "Hover to products menu",
+          "action": "hover",
+          "selector": "xpath=//*[@id='LandingHeaderNav']/div[1]/div[1]/div/div[1]/div[1]",
+          "screenshot": false,
+          "waitForLoadState": true
+        },
+        {
+          "name": "Click on Interview link",
+          "action": "click",
+          "selector": "xpath=//*[@id='LandingHeaderNav']/div[1]/div[1]/div/div[1]/div[2]/div[1]/a[2]/div[1]/div[2]",
+          "screenshot": true,
+          "waitForLoadState": true,
+          "check": {
+            "name": "Interview page should load",
+            "selector": "xpath=/html/body/section[1]/div[1]/div/div/div[1]/div[1]/h1",
+            "screenshot": true
+          }
+        }
+      ]
+    }
+  ]
+}
