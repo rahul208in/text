@@ -1,6 +1,7 @@
 import { browser } from 'k6/browser';
-import { check, group } from 'k6';
+import { check, group, sleep as k6Sleep } from 'k6';
 import { Trend } from 'k6/metrics';
+import { htmlReport } from "https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js";
 
 // Create trend metrics for each step
 const stepTrends = {};
@@ -203,7 +204,7 @@ const safeVisible = async (locator) => {
   }
 };
 
-// Function to execute actions with proper waiting
+// Function to execute actions with proper waiting and sleep
 const executeAction = async (page, baseURL, step) => {
   const { action, selector, url, value, waitForLoadState } = step;
 
@@ -216,7 +217,7 @@ const executeAction = async (page, baseURL, step) => {
       });
       // Additional wait for complete page load
       await page.waitForLoadState('networkidle', { timeout: 30000 });
-      await page.waitForTimeout(2000); // Small delay for dynamic content
+      k6Sleep(2); // Using k6 sleep function (seconds)
       break;
 
     case "click":
@@ -228,7 +229,7 @@ const executeAction = async (page, baseURL, step) => {
       if (waitForLoadState) {
         console.log("⏳ Waiting for page to load after click...");
         await page.waitForLoadState('networkidle', { timeout: 30000 });
-        await page.waitForTimeout(2000); // Additional stabilization
+        k6Sleep(2); // Using k6 sleep function (seconds)
       }
       break;
 
@@ -237,7 +238,7 @@ const executeAction = async (page, baseURL, step) => {
       const typeLocator = page.locator(selector);
       await typeLocator.waitFor({ state: 'visible', timeout: 10000 });
       await typeLocator.fill(value);
-      await page.waitForTimeout(1000); // Small delay after typing
+      k6Sleep(1); // Using k6 sleep function (seconds)
       break;
 
     case "check":
@@ -254,9 +255,56 @@ const executeAction = async (page, baseURL, step) => {
       if (!isVisible) {
         throw new Error(`Element not visible - ${selector}`);
       }
+      
+      // Additional sleep after check for stability
+      k6Sleep(0.5);
       break;
 
     default:
       throw new Error(`Unknown action: ${action}`);
   }
 };
+
+export function handleSummary(data) {
+  return {
+    "summary.html": htmlReport(data),
+    "stdout": textSummary(data, { indent: " ", enableColors: true }),
+  };
+}
+
+// Text summary function for console output
+function textSummary(data, options) {
+  const indent = options.indent || " ";
+  let result = "\n" + indent + "📊 TEST SUMMARY\n";
+  result += indent + "================\n";
+  
+  // Count passed and failed checks
+  let totalChecks = 0;
+  let passedChecks = 0;
+  
+  for (const group in data.metrics) {
+    if (group.includes("checks")) {
+      totalChecks += data.metrics[group].values.count || 0;
+      passedChecks += data.metrics[group].values.passes || 0;
+    }
+  }
+  
+  result += indent + `Total Checks: ${totalChecks}\n`;
+  result += indent + `Passed: ${passedChecks}\n`;
+  result += indent + `Failed: ${totalChecks - passedChecks}\n`;
+  result += indent + `Success Rate: ${((passedChecks / totalChecks) * 100 || 0).toFixed(2)}%\n`;
+  
+  // Add trend metrics information
+  result += "\n" + indent + "TREND METRICS (Duration in ms):\n";
+  result += indent + "---------------------------------\n";
+  
+  for (const [stepName, trend] of Object.entries(stepTrends)) {
+    const values = data.metrics[trend.name]?.values;
+    if (values) {
+      result += indent + `${stepName}:\n`;
+      result += indent + `  Avg: ${values.avg.toFixed(2)}ms, Min: ${values.min}ms, Max: ${values.max}ms\n`;
+    }
+  }
+  
+  return result;
+}
