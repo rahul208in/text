@@ -5,7 +5,22 @@ import { htmlReport } from "https://raw.githubusercontent.com/benc-uk/k6-reporte
 
 // Create trend metrics for each step
 const stepTrends = {};
-
+export const options = {
+  scenarios: {
+    ui: {
+      executor: "shared-iterations",
+      vus: 1,
+      iterations: 1,
+      options: {
+        browser: {
+          type: "chromium",
+          headless: true,
+        },
+      },
+    },
+  },
+  thresholds: {},
+};
 // Configuration
 const userConfig = {
   baseUrl: "https://www.google.com",
@@ -68,47 +83,27 @@ const userConfig = {
   ],
 };
 
-export const options = {
-  scenarios: {
-    ui: {
-      executor: "shared-iterations",
-      vus: 1,
-      iterations: 1,
-      options: {
-        browser: {
-          type: "chromium",
-          headless: false,
-        },
-      },
-    },
-  },
-  thresholds: {},
-};
+
 
 // Initialize trends for all steps
 userConfig.transactions.forEach(transaction => {
   transaction.steps.forEach(step => {
-    const trendName = `step_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}_${step.action}`;
+    const trendName = `${step.name.replace(/[^a-zA-Z0-9]/g, '_')}_${step.action}`;
     stepTrends[step.name] = new Trend(trendName, true);
   });
 });
 
 export default async function () {
   const baseURL = userConfig.baseUrl;
-  let context = null;
-  let page = null;
-  let allStepsPassed = true;
-
+  const page = await browser.newPage();
+  
   try {
     console.log("> Launching browser...");
-    context = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
-      ignoreHTTPSErrors: true,
-    });
-    
-    page = await context.newPage();
+    await page.setViewportSize({ width: 1280, height: 800 });
     page.setDefaultTimeout(30000);
     page.setDefaultNavigationTimeout(30000);
+
+    let allStepsPassed = true;
 
     // Execute all test groups
     for (const transaction of userConfig.transactions) {
@@ -117,77 +112,66 @@ export default async function () {
       
       console.log(`\n🎯 GROUP: ${groupName}`);
       
-      // Use group without async wrapper
-      group(groupName, () => {
-        // We'll execute steps sequentially within the group
-        for (let i = 0; i < transaction.steps.length; i++) {
-          const step = transaction.steps[i];
-          
-          // If previous steps failed, skip subsequent steps in this group
-          if (!allStepsPassed && groupSuccess === false) {
-            console.log(`⏭️  Skipping step due to previous failure: ${step.name}`);
-            stepTrends[step.name].add(0, { status: 'skipped' });
-            continue;
-          }
+      // Execute steps and collect results
+      const stepResults = [];
+      
+      for (let i = 0; i < transaction.steps.length; i++) {
+        const step = transaction.steps[i];
 
-          const startTime = Date.now();
-          let stepSuccess = false;
-          let errorMessage = '';
+        const startTime = Date.now();
+        let stepSuccess = false;
+        let errorMessage = '';
 
+        try {
+          // Execute the step action with await
+          await executeAction(page, baseURL, step);
+          stepSuccess = true;
+          console.log(`✅ PASS: ${step.name}`);
+        } catch (error) {
+          stepSuccess = false;
+          errorMessage = error.message;
+          groupSuccess = false;
+          allStepsPassed = false;
+          console.log(`❌ FAIL: ${step.name} - ${errorMessage}`);
+        }
+
+        const duration = Date.now() - startTime;
+
+        // Record trend metric
+        stepTrends[step.name].add(duration, { 
+          status: stepSuccess ? 'passed' : 'failed',
+          action: step.action,
+          group: groupName
+        });
+
+        // Take screenshot if requested (take on both success and failure for debugging)
+        if (step.screenshot) {
           try {
-            // Execute the step action - we need to handle this differently
-            // Since we can't use await in non-async function, we'll use immediate execution
-            const stepResult = executeActionSync(page, baseURL, step);
-            if (stepResult) {
-              stepSuccess = true;
-              console.log(`✅ PASS: ${step.name}`);
-            } else {
-              stepSuccess = false;
-              errorMessage = "Step execution failed";
-              groupSuccess = false;
-              allStepsPassed = false;
-              console.log(`❌ FAIL: ${step.name} - ${errorMessage}`);
-            }
-          } catch (error) {
-            stepSuccess = false;
-            errorMessage = error.message;
-            groupSuccess = false;
-            allStepsPassed = false;
-            console.log(`❌ FAIL: ${step.name} - ${errorMessage}`);
-          }
-
-          const duration = Date.now() - startTime;
-
-          // Record trend metric
-          stepTrends[step.name].add(duration, { 
-            status: stepSuccess ? 'passed' : 'failed',
-            action: step.action,
-            group: groupName
-          });
-
-          // Take screenshot if requested
-          if (step.screenshot && page) {
-            try {
-              const screenshotName = `${groupName}_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-              page.screenshot({ path: `screenshots/${screenshotName}` })
-                .then(() => console.log(`📸 Screenshot: ${screenshotName}`))
-                .catch(e => console.log(`⚠️  Could not take screenshot: ${e.message}`));
-            } catch (e) {
-              console.log(`⚠️  Could not take screenshot: ${e.message}`);
-            }
-          }
-
-          // Check for the step result
-          check(null, {
-            [`${groupName} - ${step.name}`]: () => stepSuccess
-          });
-
-          // If step failed and we should stop execution
-          if (!stepSuccess) {
-            console.log(`🛑 Stopping group due to step failure: ${step.name}`);
-            break;
+            const screenshotName = `${groupName.replace(/[^a-zA-Z0-9]/g, '_')}_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}_${stepSuccess ? 'PASS' : 'FAIL'}.png`;
+            await page.screenshot({ path: `${screenshotName}` });
+            console.log(`📸 Screenshot: ${screenshotName}`);
+          } catch (e) {
+            console.log(`⚠️  Could not take screenshot: ${e.message}`);
           }
         }
+
+        // Store result for group check
+        stepResults.push({
+          name: step.name,
+          success: stepSuccess,
+          skipped: false
+        });
+
+        // Continue to next step regardless of failure
+      }
+
+      // Now register all checks within a group (synchronous)
+      group(groupName, () => {
+        stepResults.forEach(result => {
+          check(null, {
+            [result.name]: () => result.success
+          });
+        });
       });
 
       console.log(`📊 Group ${groupName} completed with: ${groupSuccess ? 'SUCCESS' : 'FAILURE'}`);
@@ -197,11 +181,9 @@ export default async function () {
 
   } catch (error) {
     console.error(`💥 Critical error during test execution: ${error.message}`);
-    allStepsPassed = false;
   } finally {
     try {
-      if (page) await page.close();
-      if (context) await context.close();
+      await page.close();
       console.log("🔚 Browser closed");
     } catch (e) {
       console.error(`⚠️ Error closing browser: ${e.message}`);
@@ -218,7 +200,7 @@ const safeVisible = async (locator) => {
   }
 };
 
-// Async function to execute actions (for use outside groups)
+// Async function to execute actions
 const executeAction = async (page, baseURL, step) => {
   const { action, selector, url, value, waitForLoadState } = step;
 
@@ -229,7 +211,6 @@ const executeAction = async (page, baseURL, step) => {
         waitUntil: 'networkidle',
         timeout: 30000
       });
-      await page.waitForLoadState('networkidle', { timeout: 30000 });
       k6Sleep(2);
       return true;
 
@@ -277,69 +258,10 @@ const executeAction = async (page, baseURL, step) => {
   }
 };
 
-// Synchronous wrapper for executeAction (for use inside groups)
-const executeActionSync = (page, baseURL, step) => {
-  let result = false;
-  let error = null;
-  
-  // This is a workaround - we execute the async function but wait for it to complete
-  // Note: This is not ideal but works for the k6 group context
-  const execute = async () => {
-    try {
-      result = await executeAction(page, baseURL, step);
-    } catch (e) {
-      error = e;
-    }
-  };
-  
-  // Execute and wait for completion
-  const promise = execute();
-  
-  // In a real scenario, we'd need to handle this differently
-  // For now, we'll assume it works and handle errors via try-catch
-  return result;
-};
-
 export function handleSummary(data) {
   return {
     "summary.html": htmlReport(data),
-    "stdout": textSummary(data, { indent: " ", enableColors: true }),
-  };
-}
+    "summary.json": JSON.stringify(data),
 
-// Text summary function for console output
-function textSummary(data, options) {
-  const indent = options.indent || " ";
-  let result = "\n" + indent + "📊 TEST SUMMARY\n";
-  result += indent + "================\n";
-  
-  // Count passed and failed checks
-  let totalChecks = 0;
-  let passedChecks = 0;
-  
-  for (const group in data.metrics) {
-    if (group.includes("checks")) {
-      totalChecks += data.metrics[group].values.count || 0;
-      passedChecks += data.metrics[group].values.passes || 0;
-    }
-  }
-  
-  result += indent + `Total Checks: ${totalChecks}\n`;
-  result += indent + `Passed: ${passedChecks}\n`;
-  result += indent + `Failed: ${totalChecks - passedChecks}\n`;
-  result += indent + `Success Rate: ${((passedChecks / totalChecks) * 100 || 0).toFixed(2)}%\n`;
-  
-  // Add trend metrics information
-  result += "\n" + indent + "TREND METRICS (Duration in ms):\n";
-  result += indent + "---------------------------------\n";
-  
-  for (const [stepName, trend] of Object.entries(stepTrends)) {
-    const values = data.metrics[trend.name]?.values;
-    if (values) {
-      result += indent + `${stepName}:\n`;
-      result += indent + `  Avg: ${values.avg.toFixed(2)}ms, Min: ${values.min}ms, Max: ${values.max}ms\n`;
-    }
-  }
-  
-  return result;
+  };
 }
