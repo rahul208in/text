@@ -1,144 +1,80 @@
+import os
+from llama_cpp import Llama
 
-Great! Since the GTE-Large setup is successful, we can move to the next step in your project. Based on the architecture we discussed earlier, the next step is **storing the embeddings in a vector database (ChromaDB)**.
+# ========= CONFIG ==========
+MODEL_PATH = "path/to/llama2-7b-nous-hermes-8-bit.gguf"
+LOG_FILE_PATH = "logs/performance_test.log"
+CHUNK_SIZE = 5000  # characters per chunk
+# ===========================
 
----
+# Initialize model
+llm = Llama(
+    model_path=MODEL_PATH,
+    n_ctx=4096,
+    n_threads=4
+)
 
-### **Step 4: Storing Embeddings in ChromaDB**
+def read_and_chunk_logs(file_path, chunk_size=5000):
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
 
-Now that you have successfully generated embeddings for your documents, the next step is to store these embeddings in a vector database for efficient querying. ChromaDB is a great choice for this purpose.
+def filter_relevant_logs(log_chunk):
+    """Step 1: Extract only useful parts from a log chunk using LLM."""
+    prompt = f"""
+You are a log analysis assistant.
+From the following log chunk, extract ONLY relevant lines that indicate:
+- Errors, Exceptions, Failures
+- Timeouts, Slow queries or slow APIs
+- High response time, memory leaks, GC pauses
+- AppDynamics/Splunk alerts, CPU/Memory spikes
 
----
+Remove all INFO/debug/noise logs unless needed for context.
 
-### **What We'll Do in This Step**
-1. **Set up ChromaDB**: Install and initialize ChromaDB.
-2. **Create a ChromaDB Collection**: A collection is where embeddings and metadata are stored.
-3. **Store Embeddings**: Insert the document embeddings and metadata into the ChromaDB collection.
+Logs:
+{log_chunk}
 
----
+Return only filtered relevant logs.
+"""
+    response = llm(prompt, max_tokens=1024, temperature=0.2)
+    return response["choices"][0]["text"].strip()
 
-### **1. Install ChromaDB**
-If you haven't already installed ChromaDB, you can do so using pip:
-```bash
-pip install chromadb
-```
+def generate_final_analysis(filtered_logs):
+    """Step 2: Analyze filtered logs and produce final insights."""
+    prompt = f"""
+You are an expert performance engineer and SRE.
 
----
+Analyze the following filtered logs from performance tests, Splunk and AppDynamics:
 
-### **2. Initialize ChromaDB and Create a Collection**
+{filtered_logs}
 
-Here’s how you can set up ChromaDB and create a collection for storing embeddings:
+Provide a structured output:
+1. Overall Summary – Test passed/failed, stability, main issues.
+2. Failure Reasons – Root cause analysis for any errors.
+3. Performance Bottlenecks – Slow APIs, DB queries, thread blocking, CPU/memory issues.
+4. Optimization Recommendations – What should be improved and how.
+5. Key Observations.
 
-```python
-import chromadb
-from chromadb.config import Settings
-
-# Initialize ChromaDB client
-client = chromadb.Client(Settings(
-    persist_directory="chroma_db",  # Directory to store the database
-    chroma_db_impl="duckdb+parquet",  # Use DuckDB with Parquet for storage
-))
-
-# Create a collection (or get an existing one)
-collection_name = "document_embeddings"
-collection = client.get_or_create_collection(name=collection_name)
-```
-
----
-
-### **3. Store Embeddings in ChromaDB**
-
-You can now store the embeddings and metadata in the ChromaDB collection. Here's an example:
-
-```python
-def store_embeddings_in_chromadb(embedded_docs, collection):
-    """
-    Store document embeddings and metadata in ChromaDB.
-
-    Args:
-        embedded_docs (list): List of embedded documents with metadata.
-        collection: ChromaDB collection object.
-    """
-    for doc in embedded_docs:
-        collection.add(
-            documents=[doc["content"]],
-            metadatas=[doc["metadata"]],
-            ids=[doc["metadata"]["file_name"]],  # Use file name as the unique ID
-            embeddings=[doc["embedding"]]
-        )
-    print(f"Stored {len(embedded_docs)} documents in ChromaDB.")
-
-# Example usage
-store_embeddings_in_chromadb(embedded_docs, collection)
-```
-
----
-
-### **4. Verify Stored Data**
-
-You can verify that the embeddings and metadata have been stored correctly by querying the collection:
-
-```python
-# Retrieve all documents in the collection
-results = collection.get()
-print(f"Number of documents in collection: {len(results['documents'])}")
-for doc, metadata in zip(results["documents"], results["metadatas"]):
-    print(f"Document: {doc}")
-    print(f"Metadata: {metadata}")
-    print("-" * 50)
-```
-
----
-
-### **5. Test Script**
-
-Here’s a complete test script for this step:
-
-```python
-from app.ingestion.ingestion import DataIngestion
-from app.embedding.gte_embedding import GTEEmbeddingHandler
-import chromadb
-from chromadb.config import Settings
-
-def test_chromadb_storage():
-    # Step 1: Load documents
-    folder_path = "data/json_files/"
-    ingestion = DataIngestion(folder_path)
-    documents = ingestion.load_json_files()
-
-    # Step 2: Generate embeddings
-    embedding_handler = GTEEmbeddingHandler(model_path="/path/to/gte-large")
-    embedded_docs = embedding_handler.embed_documents(documents)
-
-    # Step 3: Initialize ChromaDB
-    client = chromadb.Client(Settings(
-        persist_directory="chroma_db",
-        chroma_db_impl="duckdb+parquet",
-    ))
-    collection = client.get_or_create_collection(name="document_embeddings")
-
-    # Step 4: Store embeddings in ChromaDB
-    for doc in embedded_docs:
-        collection.add(
-            documents=[doc["content"]],
-            metadatas=[doc["metadata"]],
-            ids=[doc["metadata"]["file_name"]],
-            embeddings=[doc["embedding"]]
-        )
-    print(f"Stored {len(embedded_docs)} documents in ChromaDB.")
-
-    # Step 5: Verify stored data
-    results = collection.get()
-    print(f"Number of documents in collection: {len(results['documents'])}")
-    for doc, metadata in zip(results["documents"], results["metadatas"]):
-        print(f"Document: {doc}")
-        print(f"Metadata: {metadata}")
-        print("-" * 50)
+Make it clear, concise, and insightful.
+"""
+    response = llm(prompt, max_tokens=2048, temperature=0.3)
+    return response["choices"][0]["text"].strip()
 
 if __name__ == "__main__":
-    test_chromadb_storage()
-```
+    print("🔹 Step 1: Reading and chunking logs...")
+    chunks = read_and_chunk_logs(LOG_FILE_PATH, CHUNK_SIZE)
 
----
+    filtered_results = []
+    print(f"🔹 Step 2: Filtering {len(chunks)} log chunks using LLM...\n")
+    for i, chunk in enumerate(chunks):
+        print(f"   ✅ Filtering chunk {i+1}/{len(chunks)}")
+        filtered = filter_relevant_logs(chunk)
+        filtered_results.append(filtered)
 
-### **Next Steps**
-Once the embeddings are successfully stored in ChromaDB, the next step will be **querying the vector database** to retrieve relevant documents based on user input. Let me know when you're ready to proceed!
+    combined_filtered_logs = "\n".join(filtered_results)
+
+    print("\n🔹 Step 3: Analyzing filtered logs with LLM for final report...")
+    final_report = generate_final_analysis(combined_filtered_logs)
+
+    print("\n✅ === FINAL PERFORMANCE ANALYSIS SUMMARY === ✅\n")
+    print(final_report)
