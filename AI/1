@@ -1,138 +1,46 @@
-Thank you for the detailed requirements! I'll create an architecture diagram incorporating RAG (Retrieval Augmented Generation) with all the specified components.
+from llama_cpp import Llama
 
-```xml
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600">
-    <!-- Background -->
-    <rect width="1000" height="600" fill="#f8f9fa"/>
+# Load the model (update path to your GGUF file)
+llm = Llama(
+    model_path="path/to/llama2-7b-nous-hermes-8-bit.gguf",
+    n_ctx=4096,
+    n_threads=4  # adjust based on your CPU
+)
 
-    <!-- Data Ingestion Layer -->
-    <rect x="50" y="50" width="200" height="100" rx="10" fill="#e3f2fd" stroke="#1565c0"/>
-    <text x="150" y="90" text-anchor="middle" font-family="Arial" font-size="14">Data Ingestion Layer</text>
-    <text x="150" y="110" text-anchor="middle" font-family="Arial" font-size="12">JSON Files Processing</text>
-    <text x="150" y="130" text-anchor="middle" font-family="Arial" font-size="12">Data Validation</text>
+def analyze_performance_report(report_text):
+    prompt = f"""
+You are an expert in performance testing and root cause analysis.
 
-    <!-- Embedding Layer -->
-    <rect x="50" y="200" width="200" height="100" rx="10" fill="#e8f5e9" stroke="#2e7d32"/>
-    <text x="150" y="240" text-anchor="middle" font-family="Arial" font-size="14">Embedding Layer</text>
-    <text x="150" y="260" text-anchor="middle" font-family="Arial" font-size="12">text-embedding-004</text>
-    <text x="150" y="280" text-anchor="middle" font-family="Arial" font-size="12">Cache Manager</text>
+Analyze the following performance test report and provide an output with:
 
-    <!-- Vector Store -->
-    <rect x="300" y="125" width="200" height="100" rx="10" fill="#fff3e0" stroke="#ef6c00"/>
-    <text x="400" y="165" text-anchor="middle" font-family="Arial" font-size="14">ChromaDB</text>
-    <text x="400" y="185" text-anchor="middle" font-family="Arial" font-size="12">Vector Storage</text>
-    <text x="400" y="205" text-anchor="middle" font-family="Arial" font-size="12">Index Management</text>
+1. **Test Summary** – Passed/Failed, overall observations.  
+2. **Failure Analysis (if any)** – Identify what failed and suggest possible reasons (e.g., DB query slowness, network, CPU spike).  
+3. **Performance Bottlenecks** – If test passed but response time is high, identify where the delay is noticed (e.g., login API took 3s, checkout API slowed due to DB).  
+4. **Improvement Suggestions** – Recommend optimizations (e.g., add DB index, optimize API logic, enable caching).  
+5. **Important Metrics** – Mention critical numbers like response time, error rate, throughput if available.
 
-    <!-- Query Processing -->
-    <rect x="550" y="50" width="200" height="100" rx="10" fill="#f3e5f5" stroke="#6a1b9a"/>
-    <text x="650" y="90" text-anchor="middle" font-family="Arial" font-size="14">Query Processing</text>
-    <text x="650" y="110" text-anchor="middle" font-family="Arial" font-size="12">Query Embedding</text>
-    <text x="650" y="130" text-anchor="middle" font-family="Arial" font-size="12">Similarity Search</text>
+Make it concise, clear, and insightful.
 
-    <!-- LLM Layer -->
-    <rect x="550" y="200" width="200" height="100" rx="10" fill="#ffebee" stroke="#c62828"/>
-    <text x="650" y="240" text-anchor="middle" font-family="Arial" font-size="14">LLM Layer</text>
-    <text x="650" y="260" text-anchor="middle" font-family="Arial" font-size="12">Llama 7B</text>
-    <text x="650" y="280" text-anchor="middle" font-family="Arial" font-size="12">Response Generation</text>
+Here is the performance report:
+{report_text}
 
-    <!-- API Layer -->
-    <rect x="300" y="300" width="200" height="100" rx="10" fill="#e0f7fa" stroke="#006064"/>
-    <text x="400" y="340" text-anchor="middle" font-family="Arial" font-size="14">API Layer</text>
-    <text x="400" y="360" text-anchor="middle" font-family="Arial" font-size="12">FastAPI + Swagger UI</text>
-    <text x="400" y="380" text-anchor="middle" font-family="Arial" font-size="12">REST Endpoints</text>
+Your response:
+"""
 
-    <!-- Monitoring Layer -->
-    <rect x="800" y="125" width="150" height="100" rx="10" fill="#fce4ec" stroke="#880e4f"/>
-    <text x="875" y="165" text-anchor="middle" font-family="Arial" font-size="14">Monitoring</text>
-    <text x="875" y="185" text-anchor="middle" font-family="Arial" font-size="12">Logging</text>
-    <text x="875" y="205" text-anchor="middle" font-family="Arial" font-size="12">Performance Metrics</text>
+    response = llm(prompt, max_tokens=1024, temperature=0.3, stop=["</s>"])
+    return response["choices"][0]["text"].strip()
 
-    <!-- Arrows -->
-    <!-- Data Flow -->
-    <defs>
-        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-            <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
-        </marker>
-    </defs>
+if __name__ == "__main__":
+    # Example input (you can replace or load from a file)
+    report = """
+    Test Name: Checkout API Performance Test
+    Status: Passed with 10% error rate
+    Average Response Time: 3.5s
+    95th Percentile: 5.2s
+    Failure Logs: Timeout error on /payment/process, DB query exceeded 4s
+    CPU Usage: 85%, Memory Usage: 70%
+    """
 
-    <!-- Connect Components -->
-    <path d="M250 100 L300 175" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" fill="none"/>
-    <path d="M250 250 L300 175" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" fill="none"/>
-    <path d="M500 175 L550 100" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" fill="none"/>
-    <path d="M500 175 L550 250" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" fill="none"/>
-    <path d="M400 225 L400 300" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" fill="none"/>
-    <path d="M750 175 L800 175" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)" fill="none"/>
-</svg>
-```
-
-
-Key Components and Flow:
-
-1. **Data Ingestion Layer**
-   - Handles multiple JSON files from specified folder
-   - Validates data structure and content
-   - Preprocesses documents for embedding
-
-2. **Embedding Layer**
-   - Uses OpenAI's text-embedding-004
-   - Implements caching for frequently accessed embeddings
-   - Handles batch processing for efficiency
-
-3. **ChromaDB (Vector Store)**
-   - Local vector database
-   - Manages document chunks and embeddings
-   - Provides efficient similarity search
-   - Persistent storage for embeddings
-
-4. **Query Processing**
-   - Embeds user queries
-   - Performs semantic search
-   - Retrieves top k relevant chunks
-   - Implements context window management
-
-5. **LLM Layer (Llama 7B)**
-   - Local LLM integration
-   - Context assembly and prompt engineering
-   - Response generation
-   - Memory management
-
-6. **API Layer**
-   - FastAPI implementation
-   - Swagger UI for API documentation
-   - RESTful endpoints
-   - Request/Response validation
-
-7. **Monitoring & Observability**
-   - Logging system (structured logging)
-   - Performance metrics
-   - Debug endpoints
-   - Cache statistics
-
-Implementation Recommendations:
-
-1. **Caching Strategy**:
-   - Use Redis/SQLite for embedding cache
-   - Implement LRU (Least Recently Used) cache
-   - Cache frequently accessed documents
-
-2. **Logging System**:
-   - Use structured logging (JSON format)
-   - Log levels: DEBUG, INFO, WARNING, ERROR
-   - Request/Response logging
-   - Performance metrics
-
-3. **API Endpoints**:
-```python
-POST /api/v1/ingest  # Bulk document ingestion
-POST /api/v1/query   # Query endpoint
-GET /api/v1/health   # Health check
-GET /api/v1/metrics  # System metrics
-```
-
-4. **Error Handling**:
-   - Graceful degradation
-   - Detailed error messages
-   - Retry mechanisms
-   - Circuit breakers
-
-Would you like me to provide the implementation details for any specific component or explain any part of the architecture in more detail?
+    result = analyze_performance_report(report)
+    print("\n=== AI Performance Analysis Summary ===\n")
+    print(result)
