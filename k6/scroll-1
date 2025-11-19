@@ -9,9 +9,9 @@ const stepTrends = {};
 export const options = {
   scenarios: {
     ui: {
-      executor: "shared-iterations",
+      executor: "constant-vus",
       vus: 1,
-      iterations: 1,
+      duration: '1m',
       options: {
         browser: {
           type: "chromium",
@@ -64,12 +64,26 @@ const autoScrollToElement = async (locator) => {
   }
 };
 
+// Wait until next step's selector is visible after click
+const waitForVisibleNextStep = async (page, nextSelector, timeout = 10000) => {
+  if (!nextSelector) return;
+  const locator = page.locator(nextSelector);
+  try {
+    await locator.waitFor({ state: 'visible', timeout });
+  } catch (e) {
+    console.log(`⚠️ Next element not visible after click: ${nextSelector}`);
+  }
+};
+
 // Retry step if element not visible (max 3 attempts)
-const executeStepWithRetry = async (page, step, maxRetries = 3) => {
+const executeStepWithRetry = async (page, step, nextSelector, maxRetries = 3) => {
   let attempt = 0;
   while (attempt < maxRetries) {
     try {
       await executeAction(page, step);
+      if (step.action === 'click' && nextSelector) {
+        await waitForVisibleNextStep(page, nextSelector, 15000);
+      }
       return true; // success
     } catch (err) {
       attempt++;
@@ -82,7 +96,7 @@ const executeStepWithRetry = async (page, step, maxRetries = 3) => {
 
 // Execute action per step
 const executeAction = async (page, step) => {
-  const { action, selector, url, value, waitForLoadState } = step;
+  const { action, selector, url, value } = step;
 
   switch (action) {
     case "goto":
@@ -91,24 +105,21 @@ const executeAction = async (page, step) => {
       k6Sleep(1);
       return true;
 
-case "click":
-    console.log(`🖱️ Clicking: ${selector}`);
-    // Scroll to element
-    const clickLocator = page.locator(selector);
-    await autoScrollToElement(clickLocator);
-    await clickLocator.waitFor({ state: 'visible', timeout: 10000 });
+    case "click":
+      console.log(`🖱️ Clicking: ${selector}`);
+      const clickLocator = page.locator(selector);
+      await autoScrollToElement(clickLocator);
+      await clickLocator.waitFor({ state: 'visible', timeout: 10000 });
 
-    // Remove target="_blank" using page.evaluate
-    await page.evaluate((sel) => {
+      // Remove target="_blank" to stay in same window
+      await page.evaluate((sel) => {
         const el = document.evaluate(sel.replace('xpath=', ''), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
         if (el && el.tagName === 'A') el.removeAttribute('target');
-    }, selector);
+      }, selector);
 
-    await clickLocator.click();
-    k6Sleep(1);
-    return true;
-
-
+      await clickLocator.click();
+      k6Sleep(1);
+      return true;
 
     case "type":
       console.log(`⌨️ Typing in: ${selector}`);
@@ -154,20 +165,25 @@ export default async function () {
   page.setDefaultNavigationTimeout(30000);
 
   try {
-    for (const transaction of userConfig.transactions) {
+    for (let t = 0; t < userConfig.transactions.length; t++) {
+      const transaction = userConfig.transactions[t];
       const groupName = transaction.name;
       let groupSuccess = true;
       console.log(`\n🎯 GROUP: ${groupName}`);
 
       const stepResults = [];
 
-      for (const step of transaction.steps) {
+      for (let s = 0; s < transaction.steps.length; s++) {
+        const step = transaction.steps[s];
+        const nextStep = transaction.steps[s + 1];
+        const nextSelector = nextStep ? nextStep.selector : null;
+
         const startTime = Date.now();
         let stepSuccess = false;
         let errorMessage = '';
 
         try {
-          await executeStepWithRetry(page, step, 3);
+          await executeStepWithRetry(page, step, nextSelector, 3);
           stepSuccess = true;
           console.log(`✅ PASS: ${step.name}`);
         } catch (error) {
