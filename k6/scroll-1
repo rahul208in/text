@@ -1,0 +1,217 @@
+import { browser } from 'k6/browser';
+import { check, group, sleep as k6Sleep } from 'k6';
+import { Trend } from 'k6/metrics';
+import { htmlReport } from "https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js";
+
+// ------------------ CONFIG ------------------
+const stepTrends = {};
+
+export const options = {
+  scenarios: {
+    ui: {
+      executor: "shared-iterations",
+      vus: 1,
+      iterations: 1,
+      options: {
+        browser: {
+          type: "chromium",
+          headless: true,
+        },
+      },
+    },
+  },
+  thresholds: {},
+};
+
+// ------------------ TEST CONFIG ------------------
+const userConfig = {
+  baseUrl: "https://grafana.com",
+  transactions: [
+    {
+      name: "Grafana Navigation",
+      steps: [
+        { name: "Navigate to Grafana Home", action: "goto", url: "/", screenshot: true },
+        { name: "Click Open Source Menu", action: "click", selector: "xpath=/html/body/header/div[1]/div/ul[1]/li/a[2]", screenshot: true },
+        { name: "Click Grafana k6 Link", action: "click", selector: "xpath=/html/body/header/div[2]/div/div[2]/div/div/div[3]/div/div[1]/a[1]/div/div/p[1]", screenshot: true },
+        { name: "Click Get Started Button", action: "click", selector: "xpath=/html/body/div[2]/div/div[6]/div/div/div[2]/div[1]/div/div/div[2]/div[2]/a", screenshot: true },
+        { name: "Click Chocolatey Package Manager", action: "click", selector: "xpath=//*[@id=\"doc-article-text\"]/p[5]/a", screenshot: true },
+        { name: "Verify Chocolatey Section Visible", action: "check", selector: "xpath=//h2[contains(text(),'Chocolatey')]", screenshot: true },
+      ],
+    },
+  ],
+};
+
+// ------------------ INIT TRENDS ------------------
+userConfig.transactions.forEach(transaction => {
+  transaction.steps.forEach(step => {
+    const trendName = `${step.name.replace(/[^a-zA-Z0-9]/g, '_')}_${step.action}`;
+    stepTrends[step.name] = new Trend(trendName, true);
+  });
+});
+
+// ------------------ HELPERS ------------------
+const safeVisible = async (locator) => {
+  try { return await locator.isVisible(); } 
+  catch (e) { return false; }
+};
+
+// Auto-scroll just enough to bring element into view
+const autoScrollToElement = async (locator) => {
+  const visible = await safeVisible(locator);
+  if (!visible) {
+    await locator.evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    k6Sleep(0.5);
+  }
+};
+
+// Retry step if element not visible (max 3 attempts)
+const executeStepWithRetry = async (page, step, maxRetries = 3) => {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      await executeAction(page, step);
+      return true; // success
+    } catch (err) {
+      attempt++;
+      if (attempt >= maxRetries) throw err;
+      console.log(`⚠️ Retry ${attempt} for step "${step.name}" due to: ${err.message}`);
+      k6Sleep(1);
+    }
+  }
+};
+
+// Execute action per step
+const executeAction = async (page, step) => {
+  const { action, selector, url, value, waitForLoadState } = step;
+
+  switch (action) {
+    case "goto":
+      console.log(`🌐 Navigating to: ${url}`);
+      await page.goto(url.startsWith('http') ? url : `${userConfig.baseUrl}${url}`, { timeout: 30000 });
+      k6Sleep(1);
+      return true;
+
+case "click":
+    console.log(`🖱️ Clicking: ${selector}`);
+    // Scroll to element
+    const clickLocator = page.locator(selector);
+    await autoScrollToElement(clickLocator);
+    await clickLocator.waitFor({ state: 'visible', timeout: 10000 });
+
+    // Remove target="_blank" using page.evaluate
+    await page.evaluate((sel) => {
+        const el = document.evaluate(sel.replace('xpath=', ''), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (el && el.tagName === 'A') el.removeAttribute('target');
+    }, selector);
+
+    await clickLocator.click();
+    k6Sleep(1);
+    return true;
+
+
+
+    case "type":
+      console.log(`⌨️ Typing in: ${selector}`);
+      const typeLocator = page.locator(selector);
+      await autoScrollToElement(typeLocator);
+      await typeLocator.waitFor({ state: 'visible', timeout: 10000 });
+      await typeLocator.fill(value);
+      k6Sleep(1);
+      return true;
+
+    case "check":
+      console.log(`🔍 Checking: ${selector}`);
+      const checkLocator = page.locator(selector);
+      await autoScrollToElement(checkLocator);
+      await checkLocator.waitFor({ state: 'visible', timeout: 15000 });
+      if (!(await safeVisible(checkLocator))) throw new Error(`Element not visible - ${selector}`);
+      k6Sleep(0.5);
+      return true;
+
+    case "scroll":
+      console.log(`🔃 Scrolling by: ${value}px`);
+      await page.evaluate(y => window.scrollBy(0, y), parseInt(value));
+      k6Sleep(1);
+      return true;
+
+    default:
+      throw new Error(`Unknown action: ${action}`);
+  }
+};
+
+// ------------------ MAIN TEST ------------------
+export default async function () {
+  const page = await browser.newPage();
+
+  // Single-window enforcement
+  await page.evaluate(() => {
+    window.open = (url) => { window.location.href = url; };
+    document.querySelectorAll("a[target='_blank']").forEach(a => a.removeAttribute("target"));
+  });
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  page.setDefaultTimeout(30000);
+  page.setDefaultNavigationTimeout(30000);
+
+  try {
+    for (const transaction of userConfig.transactions) {
+      const groupName = transaction.name;
+      let groupSuccess = true;
+      console.log(`\n🎯 GROUP: ${groupName}`);
+
+      const stepResults = [];
+
+      for (const step of transaction.steps) {
+        const startTime = Date.now();
+        let stepSuccess = false;
+        let errorMessage = '';
+
+        try {
+          await executeStepWithRetry(page, step, 3);
+          stepSuccess = true;
+          console.log(`✅ PASS: ${step.name}`);
+        } catch (error) {
+          stepSuccess = false;
+          errorMessage = error.message;
+          groupSuccess = false;
+          console.log(`❌ FAIL: ${step.name} - ${errorMessage}`);
+        }
+
+        const duration = Date.now() - startTime;
+        stepTrends[step.name].add(duration, { status: stepSuccess ? 'passed' : 'failed', action: step.action, group: groupName });
+
+        if (step.screenshot) {
+          const screenshotName = `${groupName.replace(/[^a-zA-Z0-9]/g, '_')}_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}_${stepSuccess ? 'PASS' : 'FAIL'}.png`;
+          try { await page.screenshot({ path: screenshotName }); } 
+          catch (e) { console.log(`⚠️ Could not take screenshot: ${e.message}`); }
+        }
+
+        stepResults.push({ name: step.name, success: stepSuccess, skipped: false });
+      }
+
+      // Register group checks
+      group(groupName, () => {
+        stepResults.forEach(result => {
+          check(null, { [result.name]: () => result.success });
+        });
+      });
+
+      console.log(`📊 Group ${groupName} completed with: ${groupSuccess ? 'SUCCESS' : 'FAILURE'}`);
+    }
+
+    console.log("\n🎉 All test groups completed");
+  } catch (error) {
+    console.error(`💥 Critical error: ${error.message}`);
+  } finally {
+    try { await page.close(); } 
+    catch (e) { console.error(`⚠️ Error closing browser: ${e.message}`); }
+  }
+};
+
+// ------------------ SUMMARY ------------------
+export function handleSummary(data) {
+  return {
+    "summary.html": htmlReport(data),
+    "summary.json": JSON.stringify(data),
+  };
+}
