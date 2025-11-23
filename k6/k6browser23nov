@@ -185,8 +185,19 @@ const executeAction = async (page, step) => {
             const selectLocator = page.locator(selector);
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
             await autoScrollToElement(selectLocator);
+            await selectLocator.focus();
             await selectLocator.selectOption(value);
-            k6Sleep(0.5);
+            await page.evaluate((sel) => {
+                const xpath = sel.replace('xpath=', '');
+                const el = sel.startsWith('xpath=') 
+                    ? document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
+                    : document.querySelector(sel);
+                if (el) {
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            }, selector);
+            k6Sleep(1);
             return true;
 
         case "checkbox":
@@ -307,6 +318,7 @@ export default async function () {
         for (const transaction of userConfig.transactions) {
             const groupName = transaction.name;
             console.log(`\n🎯 GROUP: ${groupName}`);
+            const stepResults = [];
 
             for (const step of transaction.steps) {
                 const startTime = Date.now();
@@ -324,9 +336,7 @@ export default async function () {
                 const duration = Date.now() - startTime;
                 stepTrends[step.name].add(duration, { status: stepSuccess ? 'passed' : 'failed', action: step.action, group: groupName });
 
-                check(step.name, {
-                    [step.name]: () => stepSuccess
-                });
+                stepResults.push({ name: step.name, success: stepSuccess });
 
                 if (step.screenshot && isFirstIteration) {
                     const screenshotName = `screenshot_${groupName.replace(/[^a-zA-Z0-9]/g, '_')}_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
@@ -334,6 +344,14 @@ export default async function () {
                     catch (e) { console.log(`⚠️ Could not take screenshot: ${e.message}`); }
                 }
             }
+
+            group(groupName, () => {
+                stepResults.forEach(result => {
+                    check(result.name, {
+                        [result.name]: () => result.success
+                    });
+                });
+            });
 
             console.log(`📊 Group ${groupName} completed`);
         }
@@ -355,4 +373,4 @@ export function handleSummary(data) {
         "summary.json": JSON.stringify(data),
     };
 }
-//R
+//RA
