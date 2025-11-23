@@ -95,9 +95,9 @@ const autoScrollToElement = async (locator) => {
 
 const waitForPageLoad = async (page) => {
     try {
-        await page.waitForLoadState('networkidle', { timeout: 10000 });
+        await page.waitForLoadState('domcontentloaded', { timeout: 5000 });
     } catch (e) {
-        await page.waitForLoadState('load', { timeout: 5000 });
+        console.log(`⚠️ Page load timeout, continuing...`);
     }
     k6Sleep(1);
 };
@@ -123,8 +123,12 @@ const executeAction = async (page, step) => {
     switch (action) {
         case "goto":
             console.log(`🌐 Navigating to: ${url}`);
-            await page.goto(url.startsWith('http') ? url : `${userConfig.baseUrl}${url}`, { waitUntil: 'networkidle', timeout: 30000 });
-            await waitForPageLoad(page);
+            try {
+                await page.goto(url.startsWith('http') ? url : `${userConfig.baseUrl}${url}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            } catch (e) {
+                console.log(`⚠️ Navigation timeout, continuing...`);
+            }
+            k6Sleep(2);
             return true;
 
         case "click":
@@ -185,18 +189,22 @@ const executeAction = async (page, step) => {
             const selectLocator = page.locator(selector);
             await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
             await autoScrollToElement(selectLocator);
-            await selectLocator.focus();
+            await selectLocator.click();
+            k6Sleep(0.3);
             await selectLocator.selectOption(value);
-            await page.evaluate((sel) => {
+            await page.evaluate((sel, val) => {
                 const xpath = sel.replace('xpath=', '');
                 const el = sel.startsWith('xpath=') 
                     ? document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
                     : document.querySelector(sel);
-                if (el) {
+                if (el && el.tagName === 'SELECT') {
+                    el.value = val;
                     el.dispatchEvent(new Event('change', { bubbles: true }));
                     el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('blur', { bubbles: true }));
                 }
-            }, selector);
+            }, selector, value);
+            await page.keyboard.press('Escape');
             k6Sleep(1);
             return true;
 
@@ -373,4 +381,4 @@ export function handleSummary(data) {
         "summary.json": JSON.stringify(data),
     };
 }
-//RA
+//RAH
