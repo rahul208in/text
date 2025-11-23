@@ -1,0 +1,334 @@
+import { browser } from 'k6/browser';
+import { check, group, sleep as k6Sleep } from 'k6';
+import { Trend } from 'k6/metrics';
+import { htmlReport } from "https://raw.githubusercontent.com/benc-uk/k6-reporter/main/dist/bundle.js";
+
+// ------------------ CONFIG ------------------
+const stepTrends = {};
+let isFirstIteration = true;
+const clipboard = {};
+
+export const options = {
+    scenarios: {
+        ui: {
+            executor: "constant-vus",
+            vus: 1,
+            duration: '4m',
+            options: {
+                browser: {
+                    type: "chromium",
+                    headless: true,
+                },
+            },
+        },
+    },
+    thresholds: {},
+};
+
+// ------------------ TEST CONFIG ------------------
+const userConfig = {
+    baseUrl: "https://grafana.com",
+    transactions: [
+         {
+            name: "Grafana Navigation",
+            steps: [
+                { name: "Navigate to Grafana Home", action: "goto", url: "/", screenshot: true },
+                { name: "Click Open Source Menu", action: "click", selector: "xpath=/html/body/header/div[1]/div/ul[1]/li/a[2]", screenshot: true },
+                { name: "Hover on Open Source", action: "hover", selector: "xpath=/html/body/header/div[1]/div/ul[1]/li/a[2]" },
+                { name: "Click Grafana k6 Link", action: "click", selector: "xpath=/html/body/header/div[2]/div/div[2]/div/div/div[3]/div/div[1]/a[1]/div/div/p[1]", screenshot: true },
+                { name: "Click on Get Started", action: "click", selector: "xpath=/html/body/div[2]/div/div[6]/div/div/div[2]/div[1]/div/div/div[2]/div[2]/a", screenshot: true },
+            ],
+        },
+       
+               {
+            name: "Transaction 2 - Form Submission",
+            steps: [
+                 { name: "Navigate to Grafana", action: "goto", url: "/", screenshot: true },
+                 { name: "Click contact us", action: "click", selector: "xpath=/html/body/header/div[1]/div/ul[2]/li/a[2]", screenshot: true },
+
+{ name: "Select Dropdown Option", action: "select", selector: "xpath=//*[@id=\"topic\"]", value: "Support" },
+
+
+                
+               
+                { name: "Copy Email", action: "copy", selector: "xpath=/html/body/div[2]/div/div/div/div/div[2]/div[1]/div/p/a", copykey: "userEmail" },
+
+                { name: "paste Email", action: "paste", selector: "xpath=//*[@id=\"email\"]", copykey: "userEmail" },
+
+                 { name: "Type name", action: "type", selector: "xpath=//*[@id=\"name\"]", value: "testing" },
+
+                { name: "Type company name", action: "type", selector: "xpath=//*[@id=\"company\"]", value: "my company" },
+
+                { name: "Select Dropdown Option1", action: "select", selector: "xpath=//*[@id=\"grafana\"]", value: "Yes" },
+
+                { name: "Click email", action: "click", selector: "xpath=/html/body/div[2]/div/div/div/div/div[1]/div/form/div[6]/div/div/fieldset/label[1]", screenshot: true },
+
+
+            ],
+        
+        },
+    ],
+};
+
+// ------------------ INIT TRENDS ------------------
+userConfig.transactions.forEach(transaction => {
+    transaction.steps.forEach(step => {
+        const trendName = `${step.name.replace(/[^a-zA-Z0-9]/g, '_')}_${step.action}`;
+        stepTrends[step.name] = new Trend(trendName, true);
+    });
+});
+
+// ------------------ HELPERS ------------------
+const safeVisible = async (locator) => {
+    try { return await locator.isVisible(); } 
+    catch (e) { return false; }
+};
+
+const autoScrollToElement = async (locator) => {
+    try {
+        await locator.evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+        k6Sleep(0.5);
+    } catch (e) {
+        console.log(`⚠️ Could not scroll to element: ${e.message}`);
+    }
+};
+
+const waitForPageLoad = async (page) => {
+    try {
+        await page.waitForLoadState('networkidle', { timeout: 10000 });
+    } catch (e) {
+        await page.waitForLoadState('load', { timeout: 5000 });
+    }
+    k6Sleep(1);
+};
+
+const executeStepWithRetry = async (page, step, maxRetries = 3) => {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+        try {
+            await executeAction(page, step);
+            return true;
+        } catch (err) {
+            attempt++;
+            if (attempt >= maxRetries) throw err;
+            console.log(`⚠️ Retry ${attempt} for step "${step.name}" due to: ${err.message}`);
+            k6Sleep(1);
+        }
+    }
+};
+
+const executeAction = async (page, step) => {
+    const { action, selector, url, value, key, checked, copykey } = step;
+
+    switch (action) {
+        case "goto":
+            console.log(`🌐 Navigating to: ${url}`);
+            await page.goto(url.startsWith('http') ? url : `${userConfig.baseUrl}${url}`, { waitUntil: 'networkidle', timeout: 30000 });
+            await waitForPageLoad(page);
+            return true;
+
+        case "click":
+            console.log(`🖱️ Clicking: ${selector}`);
+            const clickLocator = page.locator(selector);
+            await clickLocator.waitFor({ state: 'visible', timeout: 15000 });
+            await autoScrollToElement(clickLocator);
+            
+            if (selector.includes('a') || selector.includes('A')) {
+                await page.evaluate((sel) => {
+                    const xpath = sel.replace('xpath=', '');
+                    const el = sel.startsWith('xpath=') 
+                        ? document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
+                        : document.querySelector(sel);
+                    if (el && el.tagName === 'A') el.removeAttribute('target');
+                }, selector);
+            }
+            
+            await clickLocator.click();
+            await waitForPageLoad(page);
+            return true;
+
+        case "type":
+            console.log(`⌨️ Typing in: ${selector}`);
+            const typeLocator = page.locator(selector);
+            await typeLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await autoScrollToElement(typeLocator);
+            await typeLocator.clear();
+            await typeLocator.type(value, { delay: 50 });
+            k6Sleep(0.5);
+            return true;
+
+        case "hover":
+            console.log(`👆 Hovering over: ${selector}`);
+            const hoverLocator = page.locator(selector);
+            await hoverLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await autoScrollToElement(hoverLocator);
+            await hoverLocator.hover();
+            k6Sleep(2);
+            return true;
+
+        case "select":
+            console.log(`📋 Selecting option: ${value} in ${selector}`);
+            const selectLocator = page.locator(selector);
+            await selectLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await autoScrollToElement(selectLocator);
+            await selectLocator.selectOption(value);
+            k6Sleep(0.5);
+            return true;
+
+        case "checkbox":
+            console.log(`☑️ ${checked ? 'Checking' : 'Unchecking'}: ${selector}`);
+            const checkboxLocator = page.locator(selector);
+            await checkboxLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await autoScrollToElement(checkboxLocator);
+            if (checked) {
+                await checkboxLocator.check();
+            } else {
+                await checkboxLocator.uncheck();
+            }
+            k6Sleep(0.5);
+            return true;
+
+        case "press":
+            console.log(`⌨️ Pressing key: ${key} on ${selector}`);
+            const pressLocator = page.locator(selector);
+            await pressLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await autoScrollToElement(pressLocator);
+            await pressLocator.press(key);
+            await waitForPageLoad(page);
+            return true;
+
+        case "waitfor":
+            console.log(`⏳ Waiting for: ${selector}`);
+            const waitLocator = page.locator(selector);
+            await waitLocator.waitFor({ state: 'visible', timeout: 15000 });
+            return true;
+
+        case "gettext":
+            console.log(`📝 Getting text from: ${selector}`);
+            const textLocator = page.locator(selector);
+            await textLocator.waitFor({ state: 'visible', timeout: 10000 });
+            const text = await textLocator.textContent();
+            console.log(`   Text: ${text}`);
+            return true;
+
+        case "check":
+            console.log(`🔍 Checking visibility: ${selector}`);
+            const checkLocator = page.locator(selector);
+            await checkLocator.waitFor({ state: 'visible', timeout: 15000 });
+            await autoScrollToElement(checkLocator);
+            if (!(await safeVisible(checkLocator))) throw new Error(`Element not visible - ${selector}`);
+            k6Sleep(0.5);
+            return true;
+
+        case "scroll":
+            console.log(`🔃 Scrolling by: ${value}px`);
+            await page.evaluate(y => window.scrollBy(0, y), parseInt(value));
+            k6Sleep(1);
+            return true;
+
+        case "back":
+            console.log(`⬅️ Navigating back`);
+            await page.goBack({ waitUntil: 'networkidle', timeout: 10000 });
+            await waitForPageLoad(page);
+            return true;
+
+        case "forward":
+            console.log(`➡️ Navigating forward`);
+            await page.goForward({ waitUntil: 'networkidle', timeout: 10000 });
+            await waitForPageLoad(page);
+            return true;
+
+        case "reload":
+            console.log(`🔄 Reloading page`);
+            await page.reload({ waitUntil: 'networkidle', timeout: 10000 });
+            await waitForPageLoad(page);
+            return true;
+
+        case "copy":
+            console.log(`📋 Copying from: ${selector} with key: ${copykey}`);
+            const copyLocator = page.locator(selector);
+            await copyLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await autoScrollToElement(copyLocator);
+            const copiedText = await copyLocator.textContent();
+            clipboard[copykey] = copiedText;
+            console.log(`   Copied: ${copiedText}`);
+            k6Sleep(0.5);
+            return true;
+
+        case "paste":
+            console.log(`📌 Pasting to: ${selector} with key: ${copykey}`);
+            if (!clipboard[copykey]) throw new Error(`No copied value for key: ${copykey}`);
+            const pasteLocator = page.locator(selector);
+            await pasteLocator.waitFor({ state: 'visible', timeout: 10000 });
+            await autoScrollToElement(pasteLocator);
+            await pasteLocator.clear();
+            await pasteLocator.type(clipboard[copykey], { delay: 50 });
+            console.log(`   Pasted: ${clipboard[copykey]}`);
+            k6Sleep(0.5);
+            return true;
+
+        default:
+            throw new Error(`Unknown action: ${action}`);
+    }
+};
+
+// ------------------ MAIN TEST ------------------
+export default async function () {
+    const page = await browser.newPage();
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(30000);
+
+    try {
+        for (const transaction of userConfig.transactions) {
+            const groupName = transaction.name;
+            console.log(`\n🎯 GROUP: ${groupName}`);
+
+            for (const step of transaction.steps) {
+                const startTime = Date.now();
+                let stepSuccess = false;
+
+                try {
+                    await executeStepWithRetry(page, step, 3);
+                    stepSuccess = true;
+                    console.log(`✅ PASS: ${step.name}`);
+                } catch (error) {
+                    stepSuccess = false;
+                    console.log(`❌ FAIL: ${step.name} - ${error.message}`);
+                }
+
+                const duration = Date.now() - startTime;
+                stepTrends[step.name].add(duration, { status: stepSuccess ? 'passed' : 'failed', action: step.action, group: groupName });
+
+                check(step.name, {
+                    [step.name]: () => stepSuccess
+                });
+
+                if (step.screenshot && isFirstIteration) {
+                    const screenshotName = `${groupName.replace(/[^a-zA-Z0-9]/g, '_')}_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+                    try { await page.screenshot({ path: screenshotName }); } 
+                    catch (e) { console.log(`⚠️ Could not take screenshot: ${e.message}`); }
+                }
+            }
+
+            console.log(`📊 Group ${groupName} completed`);
+        }
+
+        console.log("\n🎉 All test groups completed");
+        isFirstIteration = false;
+    } catch (error) {
+        console.error(`💥 Critical error: ${error.message}`);
+    } finally {
+        try { await page.close(); } 
+        catch (e) { console.error(`⚠️ Error closing browser: ${e.message}`); }
+    }
+}
+
+// ------------------ SUMMARY ------------------
+export function handleSummary(data) {
+    return {
+        "summary.html": htmlReport(data),
+        "summary.json": JSON.stringify(data),
+    };
+}
