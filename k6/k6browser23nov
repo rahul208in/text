@@ -289,8 +289,7 @@ const executeAction = async (page, step) => {
 
 // ------------------ MAIN TEST ------------------
 export default async function () {
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    const page = await browser.newPage();
 
     await page.setViewportSize({ width: 1280, height: 800 });
     page.setDefaultTimeout(30000);
@@ -302,16 +301,6 @@ export default async function () {
             window.location.href = url;
             return window;
         };
-    });
-
-    // Listen for new pages and close them, navigate in current page instead
-    context.on('page', async (newPage) => {
-        const newUrl = newPage.url();
-        console.log(`🚫 Blocked new tab, navigating to: ${newUrl}`);
-        await newPage.close();
-        if (newUrl && newUrl !== 'about:blank') {
-            await page.goto(newUrl);
-        }
     });
 
     try {
@@ -354,10 +343,7 @@ export default async function () {
     } catch (error) {
         console.error(`💥 Critical error: ${error.message}`);
     } finally {
-        try { 
-            await page.close();
-            await context.close();
-        } 
+        try { await page.close(); } 
         catch (e) { console.error(`⚠️ Error closing browser: ${e.message}`); }
     }
 }
