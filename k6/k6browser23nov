@@ -133,15 +133,28 @@ const executeAction = async (page, step) => {
             await clickLocator.waitFor({ state: 'visible', timeout: 15000 });
             await autoScrollToElement(clickLocator);
             
-            if (selector.includes('a') || selector.includes('A')) {
-                await page.evaluate((sel) => {
-                    const xpath = sel.replace('xpath=', '');
-                    const el = sel.startsWith('xpath=') 
-                        ? document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
-                        : document.querySelector(sel);
-                    if (el && el.tagName === 'A') el.removeAttribute('target');
-                }, selector);
-            }
+            // Remove target attributes and override window.open before click
+            await page.evaluate((sel) => {
+                const xpath = sel.replace('xpath=', '');
+                const el = sel.startsWith('xpath=') 
+                    ? document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
+                    : document.querySelector(sel);
+                if (el) {
+                    if (el.tagName === 'A') {
+                        el.removeAttribute('target');
+                        el.setAttribute('target', '_self');
+                    }
+                    // Override onclick that might open new window
+                    const originalOnClick = el.onclick;
+                    el.onclick = function(e) {
+                        window.open = function(url) {
+                            window.location.href = url;
+                            return window;
+                        };
+                        if (originalOnClick) originalOnClick.call(this, e);
+                    };
+                }
+            }, selector);
             
             await clickLocator.click();
             await waitForPageLoad(page);
@@ -152,8 +165,9 @@ const executeAction = async (page, step) => {
             const typeLocator = page.locator(selector);
             await typeLocator.waitFor({ state: 'visible', timeout: 10000 });
             await autoScrollToElement(typeLocator);
-            await typeLocator.clear();
-            await typeLocator.type(value, { delay: 50 });
+            await typeLocator.click();
+            await typeLocator.fill('');
+            await typeLocator.fill(value);
             k6Sleep(0.5);
             return true;
 
@@ -261,8 +275,9 @@ const executeAction = async (page, step) => {
             const pasteLocator = page.locator(selector);
             await pasteLocator.waitFor({ state: 'visible', timeout: 10000 });
             await autoScrollToElement(pasteLocator);
-            await pasteLocator.clear();
-            await pasteLocator.type(clipboard[copykey], { delay: 50 });
+            await pasteLocator.click();
+            await pasteLocator.fill('');
+            await pasteLocator.fill(clipboard[copykey]);
             console.log(`   Pasted: ${clipboard[copykey]}`);
             k6Sleep(0.5);
             return true;
@@ -274,11 +289,30 @@ const executeAction = async (page, step) => {
 
 // ------------------ MAIN TEST ------------------
 export default async function () {
-    const page = await browser.newPage();
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
     await page.setViewportSize({ width: 1280, height: 800 });
     page.setDefaultTimeout(30000);
     page.setDefaultNavigationTimeout(30000);
+
+    // Prevent new tabs/windows - force same page navigation
+    await page.evaluate(() => {
+        window.open = function(url) {
+            window.location.href = url;
+            return window;
+        };
+    });
+
+    // Listen for new pages and close them, navigate in current page instead
+    context.on('page', async (newPage) => {
+        const newUrl = newPage.url();
+        console.log(`🚫 Blocked new tab, navigating to: ${newUrl}`);
+        await newPage.close();
+        if (newUrl && newUrl !== 'about:blank') {
+            await page.goto(newUrl);
+        }
+    });
 
     try {
         for (const transaction of userConfig.transactions) {
@@ -306,7 +340,7 @@ export default async function () {
                 });
 
                 if (step.screenshot && isFirstIteration) {
-                    const screenshotName = `${groupName.replace(/[^a-zA-Z0-9]/g, '_')}_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+                    const screenshotName = `screenshot_${groupName.replace(/[^a-zA-Z0-9]/g, '_')}_${step.name.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
                     try { await page.screenshot({ path: screenshotName }); } 
                     catch (e) { console.log(`⚠️ Could not take screenshot: ${e.message}`); }
                 }
@@ -320,7 +354,10 @@ export default async function () {
     } catch (error) {
         console.error(`💥 Critical error: ${error.message}`);
     } finally {
-        try { await page.close(); } 
+        try { 
+            await page.close();
+            await context.close();
+        } 
         catch (e) { console.error(`⚠️ Error closing browser: ${e.message}`); }
     }
 }
