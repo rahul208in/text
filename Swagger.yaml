@@ -1,0 +1,40 @@
+api:
+  name: User Service
+  base_url: https://api.example.com
+  version: v1
+
+tests:
+  - id: get_user_success
+    description: Get user details with valid user id
+
+    request:
+      method: GET
+      endpoint: /users/123
+      headers:
+        Authorization: Bearer {{token}}
+
+    expect:
+      status: 200
+      body:
+        id: 123
+        name: John
+        active: true
+
+  - id: create_user_success
+    description: Create a new user with valid data
+
+    request:
+      method: POST
+      endpoint: /users
+      headers:
+        Content-Type: application/json
+      body:
+        name: Alice
+        email: alice@example.com
+        age: 25
+
+    expect:
+      status: 201
+      body:
+        name: Alice
+        email: alice@example.com
