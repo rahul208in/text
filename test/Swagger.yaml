@@ -1,0 +1,109 @@
+api:
+  name: User Service
+  base_url: https://api.example.com
+  version: v1
+
+variables:
+  token: dummy-jwt-token
+
+tests:
+
+  # --------------------------------------------------
+  # 1️⃣ CREATE USER
+  #    Extract response values
+  # --------------------------------------------------
+  - id: create_user
+    description: Create a user and store response values
+
+    request:
+      method: POST
+      endpoint: /users
+      headers:
+        Authorization: Bearer {{token}}
+        Content-Type: application/json
+
+      body:
+        name: Alice
+        email: alice@example.com
+        age: 25
+
+    expect:
+      status: 201
+
+      body:
+        id: exists
+        name: "{{body.name}}"
+        email: "{{body.email}}"
+
+    extract:
+      user_id: response.body.id
+      user_email: response.body.email
+
+
+  # --------------------------------------------------
+  # 2️⃣ GET USER USING RESPONSE AS PATH + QUERY
+  # --------------------------------------------------
+  - id: get_user
+    description: Fetch created user using extracted user_id
+
+    request:
+      method: GET
+      endpoint: /users/{user_id}
+
+      path_params:
+        user_id: "{{user_id}}"
+
+      query_params:
+        include_profile: true
+
+      headers:
+        Authorization: Bearer {{token}}
+
+    expect:
+      status: 200
+
+      body:
+        id: "{{user_id}}"
+        email: "{{user_email}}"
+        profile_included: "{{query.include_profile}}"
+
+
+  # --------------------------------------------------
+  # 3️⃣ UPDATE USER USING RESPONSE DATA IN BODY
+  # --------------------------------------------------
+  - id: update_user_email
+    description: Update user email using extracted data
+
+    request:
+      method: PUT
+      endpoint: /users/{user_id}
+
+      path_params:
+        user_id: "{{user_id}}"
+
+      body:
+        email: updated_{{user_email}}
+
+    expect:
+      status: 200
+
+      body:
+        id: "{{user_id}}"
+        email: "{{body.email}}"
+
+
+  # --------------------------------------------------
+  # 4️⃣ SEARCH USER USING RESPONSE DATA AS QUERY
+  # --------------------------------------------------
+  - id: search_user
+    description: Search user using extracted email
+
+    request:
+      method: GET
+      endpoint: /users/search
+
+      query_params:
+        email: "{{user_email}}"
+
+    expect:
+      status: 200
